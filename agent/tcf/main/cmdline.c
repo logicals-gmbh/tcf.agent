@@ -99,6 +99,7 @@ static void channel_disconnected(Channel * c) {
 static int cmd_exit(char * s) {
     destroy_cmdline_handler();
     exit(0);
+    return 0;
 }
 
 static void display_tcf_reply(Channel * c, void * client_data, int error) {

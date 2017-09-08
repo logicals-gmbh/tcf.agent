@@ -36,7 +36,7 @@
 #  include <ctype.h>
 #endif
 #if defined(_WIN32) || defined(__CYGWIN__)
-#  include <Windows.h>
+#  include <windows.h>
 #endif
 #if defined(_WRS_KERNEL)
 #  include <ioLib.h>
@@ -626,7 +626,9 @@ static int to_local_open_flags(int flags) {
 
 static void read_path(InputStream * inp, char * path, int size) {
     int i;
+#if defined(__CYGWIN__)
     char buf[FILE_PATH_SIZE];
+#endif
     json_read_string(inp, path, size);
     if (path[0] == 0) strlcpy(path, get_user_home(), size);
     for (i = 0; path[i] != 0; i++) {
@@ -660,16 +662,6 @@ static void read_path(InputStream * inp, char * path, int size) {
         }
     }
 #endif
-    if (path[0] != '/') {
-        const char * home = get_user_home();
-        if (strcmp(home, "/") == 0) home = "";
-        snprintf(buf, sizeof(buf), "%s/%s", home, path);
-        strlcpy(path, buf, size);
-        for (i = 0; path[i] != 0; i++) {
-            if (path[i] == '\\') path[i] = '/';
-        }
-    }
-    assert(path[0] == '/');
 }
 
 static void reply_open(char * token, OutputStream * out, int err, OpenFileInfo * handle) {

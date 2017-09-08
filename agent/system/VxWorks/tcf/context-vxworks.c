@@ -226,7 +226,11 @@ int context_stop(Context * ctx) {
     else {
         vxdbg_ctx.ctxId = ext->pid;
         vxdbg_ctx.ctxType = VXDBG_CTX_TASK;
+#if _WRS_VXWORKS_MAJOR > 6 || _WRS_VXWORKS_MAJOR == 6 && _WRS_VXWORKS_MINOR >= 9
+        if (vxdbgStop(vxdbg_clnt_id, &vxdbg_ctx, TRUE) != OK) {
+#else
         if (vxdbgStop(vxdbg_clnt_id, &vxdbg_ctx) != OK) {
+#endif
             int error = errno;
             taskUnlock();
             if (error == S_vxdbgLib_INVALID_CTX) return 0;
@@ -572,6 +576,23 @@ int context_get_memory_map(Context * ctx, MemoryMap * map) {
     return 0;
 }
 
+#if ENABLE_ContextISA
+int context_get_isa(Context * ctx, ContextAddress addr, ContextISA * isa) {
+    memset(isa, 0, sizeof(ContextISA));
+#if defined(__i386__)
+    isa->def = "386";
+#elif defined(__x86_64__)
+    isa->def = "X86_64";
+#else
+    isa->def = NULL;
+#endif
+#if SERVICE_Symbols
+    if (get_context_isa(ctx, addr, &isa->isa, &isa->addr, &isa->size) < 0) return -1;
+#endif
+    return 0;
+}
+#endif
+
 unsigned context_word_size(Context * ctx) {
     return sizeof(void *);
 }
@@ -763,7 +784,11 @@ void init_contexts_sys_dep(void) {
     if ((events_signal = semCInitialize(events_signal_mem, SEM_Q_FIFO, 0)) == NULL) {
         check_error(errno);
     }
+#if _WRS_VXWORKS_MAJOR > 6 || _WRS_VXWORKS_MAJOR == 6 && _WRS_VXWORKS_MINOR >= 9
+    vxdbg_clnt_id = vxdbgClntRegister("",EVT_BP);
+#else
     vxdbg_clnt_id = vxdbgClntRegister(EVT_BP);
+#endif
     if (vxdbg_clnt_id == NULL) {
         check_error(errno);
     }

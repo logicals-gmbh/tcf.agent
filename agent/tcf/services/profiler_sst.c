@@ -85,21 +85,21 @@ static void get_stack_trace(ProfilerSST * prf) {
     int frame = get_prev_frame(prf->ctx, STACK_TOP_FRAME);
     RegisterDefinition * reg_pc = NULL;
     unsigned buf_max = prf->frame_cnt - 1;
-    uint64_t pc = 0;
+    uint64_t val_pc = 0;
 
     if (frame < 0) return;
     get_frame_info(prf->ctx, frame, &info);
     if (info == NULL) return;
     reg_pc = get_PC_definition(prf->ctx);
-    if (read_reg_value(info, reg_pc, &pc) < 0) return;
+    if (read_reg_value(info, reg_pc, &val_pc) < 0) return;
     stk_buf = (ContextAddress *)tmp_alloc(sizeof(ContextAddress) * buf_max);
-    stk_buf[stk_buf_pos++] = (ContextAddress)pc;
+    stk_buf[stk_buf_pos++] = (ContextAddress)val_pc;
     while (stk_buf_pos < buf_max) {
         frame = get_prev_frame(prf->ctx, frame);
         get_frame_info(prf->ctx, frame, &info);
         if (info == NULL) break;
-        if (read_reg_value(info, reg_pc, &pc) < 0) break;
-        stk_buf[stk_buf_pos++] = (ContextAddress)pc;
+        if (read_reg_value(info, reg_pc, &val_pc) < 0) break;
+        stk_buf[stk_buf_pos++] = (ContextAddress)val_pc;
     }
 }
 

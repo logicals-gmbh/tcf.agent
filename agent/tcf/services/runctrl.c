@@ -1417,7 +1417,12 @@ static void send_event_context_exception(Context * ctx) {
         char buf[128];
         const char * desc = signal_description(ctx->signal);
         if (desc == NULL) desc = signal_name(ctx->signal);
-        snprintf(buf, sizeof(buf), desc == NULL ? "Signal %d" : "Signal %d: %s", ctx->signal, desc);
+        if (desc == NULL) {
+            snprintf(buf, sizeof(buf), "Signal %d", ctx->signal);
+        }
+        else {
+            snprintf(buf, sizeof(buf), "Signal %d: %s", ctx->signal, desc);
+        }
         json_write_string(out, buf);
     }
     else {

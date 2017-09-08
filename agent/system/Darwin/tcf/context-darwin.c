@@ -42,6 +42,8 @@
 #include <tcf/services/breakpoints.h>
 #include <system/Darwin/tcf/regset.h>
 
+#include <mach/mach.h>
+
 #define WORD_SIZE   4
 
 typedef struct ContextExtensionDarwin {
