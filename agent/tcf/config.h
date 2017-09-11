@@ -132,7 +132,7 @@
 #endif
 
 #if !defined(ENABLE_Plugins)
-#  if TARGET_UNIX && defined(PATH_Plugins)
+#  if (TARGET_UNIX || TARGET_WINDOWS) && defined(PATH_Plugins)
 #    define ENABLE_Plugins      1
 #  else
 #    define ENABLE_Plugins      0

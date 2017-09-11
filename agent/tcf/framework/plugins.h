@@ -29,6 +29,11 @@
 extern const char *plugins_path;
 
 /*
+ * Sets path where to load plugins from
+ */
+extern void plugins_set_path(char const* pluginsPath);
+
+/*
  * Loads ALL plugins from the directory PATH_Plugins (from `config.h') in
  * alphabetical order.
  */

@@ -138,7 +138,7 @@ int main(int argc, char ** argv) {
 
 #if ENABLE_Plugins
                 case 'P':
-                    plugins_path = s;
+                    plugins_set_path(s);
                     break;
 #endif
 
