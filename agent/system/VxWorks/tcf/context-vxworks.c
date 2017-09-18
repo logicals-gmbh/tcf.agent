@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007, 2011 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -210,7 +210,7 @@ int context_stop(Context * ctx) {
         trace(LOG_CONTEXT, "context: temporary stop ctx %#lx, id %#x", ctx, ext->pid);
     }
 
-    taskLock();
+    TASKLOCK();
     if (taskIsStopped(ext->pid)) {
         /* Workaround for situation when a task was stopped without notifying TCF agent */
         int n = 0;
@@ -219,7 +219,7 @@ int context_stop(Context * ctx) {
         SPIN_LOCK_ISR_GIVE(&events_lock);
         if (n > 0) {
             trace(LOG_CONTEXT, "context: already stopped ctx %#lx, id %#x", ctx, ext->pid);
-            taskUnlock();
+            TASKUNLOCK();
             return 0;
         }
     }
@@ -232,7 +232,7 @@ int context_stop(Context * ctx) {
         if (vxdbgStop(vxdbg_clnt_id, &vxdbg_ctx) != OK) {
 #endif
             int error = errno;
-            taskUnlock();
+            TASKUNLOCK();
             if (error == S_vxdbgLib_INVALID_CTX) return 0;
             trace(LOG_ALWAYS, "context: can't stop ctx %#lx, id %#x: %s",
                     ctx, ext->pid, errno_to_str(error));
@@ -245,7 +245,7 @@ int context_stop(Context * ctx) {
         info->stopped_ctx.ctxId = ext->pid;
         event_info_post(info);
     }
-    taskUnlock();
+    TASKUNLOCK();
     return 0;
 }
 
@@ -296,16 +296,16 @@ int context_continue(Context * ctx) {
 
     vxdbg_ctx.ctxId = ext->pid;
     vxdbg_ctx.ctxType = VXDBG_CTX_TASK;
-    taskLock();
+    TASKLOCK();
     if (vxdbgCont(vxdbg_clnt_id, &vxdbg_ctx) != OK) {
         int error = errno;
-        taskUnlock();
+        TASKUNLOCK();
         trace(LOG_ALWAYS, "context: can't continue ctx %#lx, id %#x: %s",
                 ctx, ext->pid, errno_to_str(error));
         return -1;
     }
     assert(!taskIsStopped(ext->pid));
-    taskUnlock();
+    TASKUNLOCK();
     send_context_started_event(ctx);
     return 0;
 }
@@ -335,15 +335,15 @@ int context_single_step(Context * ctx) {
 
     vxdbg_ctx.ctxId = ext->pid;
     vxdbg_ctx.ctxType = VXDBG_CTX_TASK;
-    taskLock();
+    TASKLOCK();
     if (vxdbgStep(vxdbg_clnt_id, &vxdbg_ctx, NULL, NULL) != OK) {
         int error = errno;
-        taskUnlock();
+        TASKUNLOCK();
         trace(LOG_ALWAYS, "context: can't step ctx %#lx, id %#x: %d",
                 ctx, ext->pid, errno_to_str(error));
         return -1;
     }
-    taskUnlock();
+    TASKUNLOCK();
     send_context_started_event(ctx);
     return 0;
 }
@@ -399,7 +399,7 @@ int context_read_mem(Context * ctx, ContextAddress address, void * buf, size_t s
         return -1;
     }
 #ifdef _WRS_PERSISTENT_SW_BP
-    vxdbgMemRead((void *)address, buf, size);
+    VXDBG_MEM_READ((void *)address, buf, size);
 #else
     bcopy((void *)address, buf, size);
 #endif
@@ -414,7 +414,7 @@ int context_write_mem(Context * ctx, ContextAddress address, void * buf, size_t 
     }
     if (check_breakpoints_on_memory_write(ctx, address, buf, size) < 0) return -1;
 #ifdef _WRS_PERSISTENT_SW_BP
-    vxdbgMemWrite((void *)address, buf, size);
+    VXDBG_MEM_WRITE((void *)address, buf, size);
 #else
     bcopy(buf, (void *)address, size);
 #endif
@@ -621,6 +621,7 @@ static void event_handler(void * arg) {
         stopped_ctx->stopped = 1;
         stopped_ctx->stopped_by_bp = info->bp_info_ok;
         stopped_ctx->stopped_by_exception = 0;
+        assert(get_regs_PC(stopped_ctx) == info->addr);
         if (stopped_ctx->stopped_by_bp && !is_breakpoint_address(stopped_ctx, info->addr)) {
             /* Break instruction that is not planted by us */
             stopped_ctx->stopped_by_bp = 0;

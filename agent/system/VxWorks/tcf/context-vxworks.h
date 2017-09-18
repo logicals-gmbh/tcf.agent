@@ -23,6 +23,14 @@
 #include <tcf/config.h>
 #include <tcf/framework/context.h>
 
+#if defined(_WRS_CONFIG_SMP)
+#define TASKLOCK                taskCpuLock
+#define TASKUNLOCK              taskCpuUnlock
+#else /* defined(_WRS_CONFIG_SMP) */
+#define TASKLOCK                taskLock
+#define TASKUNLOCK              taskUnlock
+#endif /* defined(_WRS_CONFIG_SMP) */
+
 extern int get_context_task_id(Context * ctx);
 
 #endif /* D_context_vxworks */
