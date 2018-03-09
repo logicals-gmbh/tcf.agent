@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2016 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -47,7 +47,6 @@
 #include <tcf/framework/mdep-fs.h>
 #include <tcf/framework/mdep-inet.h>
 #include <tcf/framework/tcf.h>
-#include <tcf/framework/channel.h>
 #include <tcf/framework/channel_tcp.h>
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/protocol.h>
@@ -92,7 +91,7 @@
 typedef struct ChannelTCP ChannelTCP;
 
 struct ChannelTCP {
-    Channel * chan;         /* Public channel information - must be first */
+    Channel * chan;         /* Public channel information */
     int magic;              /* Magic number */
     int socket;             /* Socket file descriptor */
     struct sockaddr * addr_buf; /* Socket remote address */
@@ -224,7 +223,7 @@ static int certificate_verify_callback(int preverify_ok, X509_STORE_CTX * ctx) {
 #endif /* ENABLE_SSL */
 
 static void delete_channel(ChannelTCP * c) {
-    trace(LOG_PROTOCOL, "Deleting channel %#lx", c);
+    trace(LOG_PROTOCOL, "Deleting channel %#" PRIxPTR, (uintptr_t)c);
     assert(c->lock_cnt == 0);
     assert(c->out_flush_cnt == 0);
     assert(c->magic == CHANNEL_MAGIC);
@@ -328,7 +327,7 @@ static void post_write_request(OutputBuffer * bf) {
             }
             else {
                 int error = set_ssl_errno();
-                trace(LOG_PROTOCOL, "Can't SSL_write() on channel %#lx: %s", c, errno_to_str(error));
+                trace(LOG_PROTOCOL, "Can't SSL_write() on channel %#" PRIxPTR ": %s", (uintptr_t)c, errno_to_str(error));
                 c->wr_req.type = AsyncReqSend;
                 c->wr_req.error = error;
                 c->wr_req.u.sio.rval = -1;
@@ -379,7 +378,7 @@ static void tcp_flush_with_flags(ChannelTCP * c, int flags) {
             ssize_t wr = send(c->socket, p, sz, flags);
             if (wr < 0) {
                 int err = errno;
-                trace(LOG_PROTOCOL, "Can't send() on channel %#lx: %s", c, errno_to_str(err));
+                trace(LOG_PROTOCOL, "Can't send() on channel %#" PRIxPTR ": %s", (uintptr_t)c, errno_to_str(err));
                 c->out_errno = err;
                 c->chan->out.cur = c->obuf->buf;
                 c->out_eom_cnt = 0;
@@ -601,7 +600,7 @@ static void tcp_post_read(InputBuf * ibuf, unsigned char * buf, size_t size) {
             }
             else {
                 if (c->chan->state != ChannelStateDisconnected) {
-                    trace(LOG_ALWAYS, "Can't SSL_read() on channel %#lx: %s", c, errno_to_str(set_ssl_errno()));
+                    trace(LOG_ALWAYS, "Can't SSL_read() on channel %#" PRIxPTR ": %s", (uintptr_t)c, errno_to_str(set_ssl_errno()));
                 }
                 c->read_done = 0;
                 post_event(c->rd_req.done, &c->rd_req);
@@ -675,7 +674,7 @@ static void send_eof_and_close(Channel * channel, int err) {
         channel->disconnected(channel);
     }
     else {
-        trace(LOG_PROTOCOL, "channel %#lx disconnected", c);
+        trace(LOG_PROTOCOL, "channel %#" PRIxPTR " disconnected", (uintptr_t)c);
         if (channel->protocol != NULL) protocol_release(channel->protocol);
     }
     channel->protocol = NULL;
@@ -694,7 +693,7 @@ static void handle_channel_msg(void * x) {
     has_msg = ibuf_start_message(&c->ibuf);
     if (has_msg <= 0) {
         if (has_msg < 0 && c->chan->state != ChannelStateDisconnected) {
-            trace(LOG_PROTOCOL, "Socket is shutdown by remote peer, channel %#lx %s", c, c->chan->peer_name);
+            trace(LOG_PROTOCOL, "Socket is shutdown by remote peer, channel %#" PRIxPTR " %s", (uintptr_t)c, c->chan->peer_name);
             channel_close(c->chan);
         }
     }
@@ -1149,7 +1148,8 @@ static int setup_unix_sockaddr(PeerServer * ps, struct sockaddr_un * localhost) 
     memset(localhost, 0, sizeof(struct sockaddr_un));
 
     if (strlen(host) >= sizeof(localhost->sun_path)) {
-        trace(LOG_ALWAYS, "Socket file path is too long (%d > %d)", strlen(host), sizeof(localhost->sun_path) - 1);
+        trace(LOG_ALWAYS, "Socket file path is too long (%u > %u)",
+            (unsigned)strlen(host), (unsigned)sizeof(localhost->sun_path) - 1);
         return E2BIG;
     }
 
@@ -1471,6 +1471,7 @@ void generate_ssl_certificate(void) {
     char fnm[FILE_PATH_SIZE];
     X509 * cert = NULL;
     RSA * rsa = NULL;
+    BIGNUM * bne = NULL;
     EVP_PKEY * rsa_key = NULL;
     ASN1_INTEGER * serial = NULL;
     X509_NAME * name = NULL;
@@ -1479,7 +1480,15 @@ void generate_ssl_certificate(void) {
     FILE * fp = NULL;
 
     ini_ssl();
-    if (!err && (rsa = RSA_generate_key(2048, 3, NULL, (void *)"RSA")) == NULL) err = set_ssl_errno();
+#if defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x10100001
+    /* RSA_generate_key() is deprecated in OpenSSL 1.1.0 */
+    bne = BN_new();
+    rsa = RSA_new();
+    if (!err && !BN_set_word(bne, 3)) err = set_ssl_errno();
+    if (!err && !RSA_generate_key_ex(rsa, 2048, bne, NULL)) err = set_ssl_errno();
+#else
+    if (!err && (rsa = RSA_generate_key(2048, 3, NULL, NULL)) == NULL) err = set_ssl_errno();
+#endif
     if (!err && !RSA_check_key(rsa)) err = set_ssl_errno();
     if (!err && gethostname(subject_name, sizeof(subject_name)) != 0) err = errno;
     if (!err) {
@@ -1501,7 +1510,7 @@ void generate_ssl_certificate(void) {
             (unsigned char *)issuer_name, strlen(issuer_name), -1, 0);
     }
     if (!err && !X509_set_pubkey(cert, rsa_key)) err = set_ssl_errno();
-    if (!err) X509_sign(cert, rsa_key, EVP_md5());
+    if (!err) X509_sign(cert, rsa_key, EVP_sha256());
     if (!err && !X509_verify(cert, rsa_key)) err = set_ssl_errno();
     if (stat(tcf_dir, &st) != 0 && mkdir(tcf_dir, MKDIR_MODE_TCF) != 0) err = errno;
     snprintf(fnm, sizeof(fnm), "%s/ssl", tcf_dir);
@@ -1524,7 +1533,9 @@ void generate_ssl_certificate(void) {
         fprintf(stderr, "Cannot create SSL certificate: %s\n", errno_to_str(err));
     }
     if (cert != NULL) X509_free(cert);
-    if (rsa != NULL) RSA_free(rsa);
+    if (rsa_key != NULL) EVP_PKEY_free(rsa_key);
+    else if (rsa != NULL) RSA_free(rsa);
+    if (bne != NULL) BN_free(bne);
 #else /* ENABLE_SSL */
     fprintf(stderr, "SSL support not available\n");
 #endif /* ENABLE_SSL */

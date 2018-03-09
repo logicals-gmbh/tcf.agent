@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2015 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -296,12 +296,12 @@ const char * symbol2id(const Symbol * sym) {
         char base[sizeof(buf)];
         assert(sym->ctx == sym->base->ctx);
         assert(sym->sym_class == SYM_CLASS_TYPE);
-        strcpy(base, symbol2id(sym->base));
-        snprintf(buf, sizeof(buf), "@P%" PRIX64 ".%s", (uint64_t)sym->length, base);
+        strlcpy(base, symbol2id(sym->base), sizeof(base));
+        snprintf(buf, sizeof(buf), "@P%" PRIx64 ".%s", (uint64_t)sym->length, base);
     }
     else {
         int i = sym->info ? (int)(sym->info - basic_type_info) + 1 : 0;
-        snprintf(buf, sizeof(buf), "@S%" PRIX64 ".%lX.%X.%X.%s",
+        snprintf(buf, sizeof(buf), "@S%" PRIx64 ".%lX.%X.%X.%s",
             (uint64_t)sym->module, sym->index, sym->frame, i, sym->ctx->id);
     }
     return buf;
@@ -845,7 +845,7 @@ static void add_cache_symbol(Context * ctx, ULONG64 pc, PCSTR name, Symbol * sym
     SymbolCacheEntry * entry = (SymbolCacheEntry *)loc_alloc_zero(sizeof(SymbolCacheEntry));
     assert(!ctx->mem->exited);
     entry->pc = pc;
-    strcpy(entry->name, name);
+    strlcpy(entry->name, name, sizeof(entry->name));
     entry->error = get_error_report(error);
     if (!error) {
         entry->frame_relative = sym->frame > 0;

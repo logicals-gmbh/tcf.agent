@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2016 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -23,10 +23,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include <tcf/framework/protocol.h>
 #include <tcf/framework/json.h>
 #include <tcf/framework/exceptions.h>
-#include <tcf/framework/context.h>
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/cache.h>
 #if ENABLE_Symbols
@@ -209,7 +207,7 @@ static void command_run_test(char * token, Channel * c) {
 #if ENABLE_RCBP_TEST
         RunTestDoneArgs * data = (RunTestDoneArgs *)loc_alloc_zero(sizeof(RunTestDoneArgs));
         data->c = c;
-        strcpy(data->token, token);
+        strlcpy(data->token, token, sizeof(data->token));
         channel_lock_with_msg(c, DIAGNOSTICS);
         if (run_test_process(run_test_done, data) == 0) return;
         err = errno;
@@ -280,7 +278,6 @@ static void get_symbol_cache_client(void * x) {
     GetSymbolArgs * args = (GetSymbolArgs *)x;
     Channel * c = cache_channel();
     Context * ctx = args->ctx;
-    Symbol * sym = NULL;
     ContextAddress addr = 0;
     int error = ERR_SYM_NOT_FOUND;
 
@@ -288,6 +285,7 @@ static void get_symbol_cache_client(void * x) {
 
 #if ENABLE_Symbols
     if (get_error_code(error) == ERR_SYM_NOT_FOUND) {
+        Symbol * sym = NULL;
         error = 0;
         if (find_symbol_by_name(ctx, STACK_NO_FRAME, 0, args->name, &sym) < 0) error = errno;
         if (!error && get_symbol_address(sym, &addr) < 0) error = errno;
@@ -300,7 +298,7 @@ static void get_symbol_cache_client(void * x) {
         int cls = 0;
         error = 0;
         if (find_test_symbol(ctx, args->name, &ptr, &cls) < 0) error = errno;
-        addr = (ContextAddress)ptr;
+        addr = (ContextAddress)(uintptr_t)ptr;
     }
 #endif
 

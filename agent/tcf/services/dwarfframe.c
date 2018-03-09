@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2014-2015 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -834,7 +834,6 @@ static void generate_register_commands(RegisterRules * reg, RegisterDefinition *
         if (reg->rule == RULE_OFFSET) {
             LocationExpressionCommand * cmd = add_command(SFT_CMD_RD_MEM);
             cmd->args.mem.size = dst_reg_def->size;
-            if (cmd->args.mem.size > rules.address_size) cmd->args.mem.size = rules.address_size;
             cmd->args.mem.big_endian = rules.reg_id_scope.big_endian;
         }
         break;
@@ -855,7 +854,6 @@ static void generate_register_commands(RegisterRules * reg, RegisterDefinition *
         if (reg->rule == RULE_EXPRESSION) {
             LocationExpressionCommand * cmd = add_command(SFT_CMD_RD_MEM);
             cmd->args.mem.size = dst_reg_def->size;
-            if (cmd->args.mem.size > rules.address_size) cmd->args.mem.size = rules.address_size;
             cmd->args.mem.big_endian = rules.reg_id_scope.big_endian;
         }
         break;
@@ -1028,8 +1026,8 @@ static void read_frame_cie(U8_T fde_pos, U8_T pos) {
     rules.cie_pos = pos;
     if (pos >= rules.section->size) {
         str_fmt_exception(ERR_INV_DWARF,
-            "Invalid CIE pointer 0x%" PRIX64
-            " in FDE at 0x%" PRIX64, pos, fde_pos);
+            "Invalid CIE pointer %#" PRIx64
+            " in FDE at %#" PRIx64, pos, fde_pos);
     }
     dio_SetPos(pos);
     cie_length = dio_ReadU4();
@@ -1220,8 +1218,8 @@ static void create_search_index(DWARFCache * cache, FrameInfoIndex * index) {
             }
             else {
                 str_fmt_exception(ERR_INV_DWARF,
-                    "Invalid length 0x%" PRIX64
-                    " in FDE at 0x%" PRIX64, fde_length, fde_pos);
+                    "Invalid length %#" PRIx64
+                    " in FDE at %#" PRIx64, fde_length, fde_pos);
             }
         }
         cie_ref = fde_dwarf64 ? dio_ReadU8() : dio_ReadU4();

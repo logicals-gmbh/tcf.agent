@@ -1,18 +1,32 @@
 # -*- cmake -*-
 
 cmake_minimum_required(VERSION 2.8)
+project(tcfagent C)
+include(GNUInstallDirs)
 
 set(CMAKE_COLOR_MAKEFILE OFF)
 
 set(TCF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(TCF_LIB_NAME tcf-agent)
 
-if (NOT WIN32)
+if(NOT WIN32)
   if(NOT TCF_OPSYS)
     set(TCF_OPSYS "GNU/Linux")
   endif()
   if(NOT TCF_MACHINE)
     set(TCF_MACHINE "x86_64")
+  endif()
+  if(TCF_MACHINE STREQUAL "armv6l")
+    set(TCF_MACHINE "arm")
+  endif()
+  if(TCF_MACHINE STREQUAL "armv7l")
+    set(TCF_MACHINE "arm")
+  endif()
+  if(TCF_MACHINE STREQUAL "ppc64")
+    set(TCF_MACHINE "powerpc")
+  endif()
+  if(TCF_MACHINE STREQUAL "aarch64")
+    set(TCF_MACHINE "a64")
   endif()
 endif()
 
@@ -43,3 +57,15 @@ message(STATUS "machine:" ${TCF_MACHINE})
 
 add_executable(agent tcf/main/main.c)
 target_link_libraries(agent ${TCF_LIB_NAME})
+
+# executable and library cant have the same target name,
+# but we can rename the output
+set_target_properties(agent
+        PROPERTIES OUTPUT_NAME tcf-agent)
+
+# add target to install all outputs
+install(TARGETS agent ${TCF_LIB_NAME}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)

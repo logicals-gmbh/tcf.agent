@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2013, 2016 Stanislav Yakovlev and others.
+ * Copyright (c) 2013-2018 Stanislav Yakovlev and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -32,7 +32,7 @@
 #  include <sys/auxv.h>
 #  include <asm/hwcap.h>
 #endif
-#include <sys/ptrace.h>
+#include <tcf/framework/mdep-ptrace.h>
 #include <tcf/framework/errors.h>
 #include <tcf/framework/cpudefs.h>
 #include <tcf/framework/context.h>
@@ -50,30 +50,30 @@
 #define REG_OFFSET(name) offsetof(REG_SET, name)
 
 RegisterDefinition regs_def[] = {
-#   define REG_FP user.regs.uregs[11]
-#   define REG_IP user.regs.uregs[12]
-#   define REG_SP user.regs.uregs[13]
-#   define REG_LR user.regs.uregs[14]
-#   define REG_PC user.regs.uregs[15]
-#   define REG_CPSR user.regs.uregs[16]
-    { "r0",      REG_OFFSET(user.regs.uregs[0]),      4, 0, 0},
-    { "r1",      REG_OFFSET(user.regs.uregs[1]),      4, 1, 1},
-    { "r2",      REG_OFFSET(user.regs.uregs[2]),      4, 2, 2},
-    { "r3",      REG_OFFSET(user.regs.uregs[3]),      4, 3, 3},
-    { "r4",      REG_OFFSET(user.regs.uregs[4]),      4, 4, 4},
-    { "r5",      REG_OFFSET(user.regs.uregs[5]),      4, 5, 5},
-    { "r6",      REG_OFFSET(user.regs.uregs[6]),      4, 6, 6},
-    { "r7",      REG_OFFSET(user.regs.uregs[7]),      4, 7, 7},
-    { "r8",      REG_OFFSET(user.regs.uregs[8]),      4, 8, 8},
-    { "r9",      REG_OFFSET(user.regs.uregs[9]),      4, 9, 9},
-    { "r10",     REG_OFFSET(user.regs.uregs[10]),     4, 10, 10},
-    { "fp",      REG_OFFSET(user.regs.uregs[11]),     4, 11, 11},
-    { "ip",      REG_OFFSET(user.regs.uregs[12]),     4, 12, 12},
-    { "sp",      REG_OFFSET(user.regs.uregs[13]),     4, 13, 13},
-    { "lr",      REG_OFFSET(user.regs.uregs[14]),     4, 14, 14},
-    { "pc",      REG_OFFSET(user.regs.uregs[15]),     4, 15, 15},
-    { "cpsr",    REG_OFFSET(user.regs.uregs[16]),     4, 128, 128},
-    { "orig_r0", REG_OFFSET(user.regs.uregs[17]),     4, -1, -1},
+#   define REG_FP gp.regs[11]
+#   define REG_IP gp.regs[12]
+#   define REG_SP gp.regs[13]
+#   define REG_LR gp.regs[14]
+#   define REG_PC gp.regs[15]
+#   define REG_CPSR gp.regs[16]
+    { "r0",      REG_OFFSET(gp.regs[0]),      4, 0, 0},
+    { "r1",      REG_OFFSET(gp.regs[1]),      4, 1, 1},
+    { "r2",      REG_OFFSET(gp.regs[2]),      4, 2, 2},
+    { "r3",      REG_OFFSET(gp.regs[3]),      4, 3, 3},
+    { "r4",      REG_OFFSET(gp.regs[4]),      4, 4, 4},
+    { "r5",      REG_OFFSET(gp.regs[5]),      4, 5, 5},
+    { "r6",      REG_OFFSET(gp.regs[6]),      4, 6, 6},
+    { "r7",      REG_OFFSET(gp.regs[7]),      4, 7, 7},
+    { "r8",      REG_OFFSET(gp.regs[8]),      4, 8, 8},
+    { "r9",      REG_OFFSET(gp.regs[9]),      4, 9, 9},
+    { "r10",     REG_OFFSET(gp.regs[10]),     4, 10, 10},
+    { "fp",      REG_OFFSET(gp.regs[11]),     4, 11, 11},
+    { "ip",      REG_OFFSET(gp.regs[12]),     4, 12, 12},
+    { "sp",      REG_OFFSET(gp.regs[13]),     4, 13, 13},
+    { "lr",      REG_OFFSET(gp.regs[14]),     4, 14, 14},
+    { "pc",      REG_OFFSET(gp.regs[15]),     4, 15, 15},
+    { "cpsr",    REG_OFFSET(gp.cpsr),         4, 128, 128},
+    { "orig_r0", REG_OFFSET(gp.orig_r0),      4, -1, -1},
     { "vfp",     0, 0, -1, -1, 0, 0, 1, 1 },
     { NULL,      0, 0,  0,  0},
 };
@@ -89,10 +89,10 @@ static RegisterDefinition * lr_def = NULL;
 static RegisterDefinition * cpsr_def = NULL;
 
 #if !defined(PTRACE_GETHBPREGS)
-#define PTRACE_GETHBPREGS (enum __ptrace_request)29
+#  define PTRACE_GETHBPREGS 29
 #endif
 #if !defined(PTRACE_SETHBPREGS)
-#define PTRACE_SETHBPREGS (enum __ptrace_request)30
+# define PTRACE_SETHBPREGS 30
 #endif
 
 #define ARM_DEBUG_ARCH_V6       1

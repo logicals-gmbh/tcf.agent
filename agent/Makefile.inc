@@ -2,6 +2,9 @@ CONF ?= Debug
 
 ifndef OPSYS
   OPSYS   := $(shell uname -o 2>/dev/null || uname -s)
+  ifeq ($(OPSYS),Linux)
+    OPSYS := GNU/Linux
+  endif
 endif
 ifndef MACHINE
   MACHINE := $(shell uname -m)
@@ -97,9 +100,6 @@ ifneq ($(OPSYS),Windows)
     OPTS += -D_FILE_OFFSET_BITS=64
   endif
   OPTS += -Wall
-  ifneq ($(CC),g++)
-    OPTS += -Wmissing-prototypes
-  endif
 endif
 
 # Compiler flags definition
@@ -151,7 +151,7 @@ ifdef OpenSSL
 endif
 
 ifeq ($(OPSYS),MinGW)
-  VERSION := 1.5.0
+  VERSION := 1.6.0
 else
   VERSION := $(shell grep "%define version " $(TCF_AGENT_DIR)/tcf/main/tcf-agent.spec | sed -e "s/%define version //")
 endif
@@ -186,3 +186,8 @@ ifdef SERVICES
 endif
 
 OPTS += $(foreach dir,$(INCDIRS),-I$(TCF_AGENT_DIR)/$(dir))
+
+ifeq ($(OPSYS),GNU/Linux)
+  CHECK_C_LIB := $(shell $(TCF_AGENT_DIR)/bin/check-c-lib $(CC) $(CFLAGS) $(OPTS))
+  OPTS += $(CHECK_C_LIB)
+endif

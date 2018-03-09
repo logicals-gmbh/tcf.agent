@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Wind River Systems, Inc.
+ * Copyright (c) 2016-2017 Wind River Systems, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -39,7 +39,6 @@
 #include <tcf/framework/mdep-fs.h>
 #include <tcf/framework/mdep-inet.h>
 #include <tcf/framework/tcf.h>
-#include <tcf/framework/channel.h>
 #include <tcf/framework/channel_lws.h>
 #include <tcf/framework/channel_lws_ext.h>
 #include <tcf/framework/myalloc.h>
@@ -181,7 +180,7 @@ typedef struct SessionData {
 
 typedef struct WSIUserData {
     SessionData * data;         /* session data */
-    ChannelConnectInfo * args;         /* connection args (client connection only) */
+    ChannelConnectInfo * args;  /* connection args (client connection only) */
     void * cb_arg;
 } WSIUserData;
 
@@ -300,7 +299,7 @@ static void lws_add_channel_property(SessionData * data, char * name, char * val
     data->prop_cnt++;
 }
 
-static void lws_parse_http_header(SessionData * data, struct lws *wsi) {
+static void lws_parse_http_header(SessionData * data, struct lws * wsi) {
     int n = 0, len;
     char * prop_name;
     char * prop_value;
@@ -332,9 +331,7 @@ static void lws_parse_http_header(SessionData * data, struct lws *wsi) {
     }
 }
 
-static int lws_tcf_callback(struct lws *wsi, enum lws_callback_reasons reason,
-                        void *user, void *in, size_t len)
-{
+static int lws_tcf_callback(struct lws * wsi, enum lws_callback_reasons reason, void * user, void *in, size_t len) {
     struct lws_pollargs *pa = (struct lws_pollargs *)in;
     WSIUserData * userdata = (WSIUserData *) user;
 
@@ -1254,8 +1251,7 @@ static ChannelServer * channel_server_create(PeerServer * ps) {
 
 /* LWS service thread */
 
-static void * lws_service_thread(void * x)
-{
+static void * lws_service_thread(void * x) {
     struct lws_context_creation_info context_creation_info;
     int vhost_created = 0;
 
@@ -1577,7 +1573,7 @@ void channel_lws_get_properties(Channel * channel, char *** prop_names, char ***
     *prop_cnt = c->data->prop_cnt;
 }
 
-void ini_channel_lws() {
+void ini_channel_lws(void) {
     static int initialized = 0;
     pthread_t thread;
 #if ENABLE_Epoll
@@ -1609,5 +1605,5 @@ void ini_channel_lws() {
     dummy_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     pthread_mutex_init(&lws_list_mutex, NULL);
     pthread_create(&thread, NULL, lws_service_thread, NULL);
-    }
+}
 #endif /* ENABLE_LibWebSockets */

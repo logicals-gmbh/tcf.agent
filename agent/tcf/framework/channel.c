@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2016 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -68,10 +68,11 @@ LINK channel_server_root = TCF_LIST_INIT(channel_server_root);
 
 #define BCAST_MAGIC 0x1463e328
 
-#define out2bcast(A)    ((TCFBroadcastGroup *)((char *)(A) - offsetof(TCFBroadcastGroup, out)))
-#define bclink2channel(A) ((Channel *)((char *)(A) - offsetof(Channel, bclink)))
+#define out2bcast(A)        ((TCFBroadcastGroup *)((char *)(A) - offsetof(TCFBroadcastGroup, out)))
+#define bclink2channel(A)   ((Channel *)((char *)(A) - offsetof(Channel, bclink)))
 #define susplink2channel(A) ((Channel *)((char *)(A) - offsetof(Channel, susplink)))
-#define chan2lock(A) ((ChannelLock *)((char *)(A) - offsetof(ChannelLock, link)))
+#define chan2lock(A)        ((ChannelLock *)((char *)(A) - offsetof(ChannelLock, link)))
+#define client2channel(A)   ((Channel *)((char *)(A) - offsetof(Channel, client)))
 
 static ChannelTransport * channel_transport = NULL;
 static unsigned channel_transport_cnt = 0;
@@ -193,8 +194,19 @@ void add_channel_close_listener(ChannelCloseListener listener) {
     close_listeners[close_listeners_cnt++] = listener;
 }
 
+static void client_connection_lcb(ClientConnection * c) {
+    channel_lock(client2channel(c));
+}
+
+static void client_connection_ucb(ClientConnection * c) {
+    channel_unlock(client2channel(c));
+}
+
 void notify_channel_created(Channel * c) {
     unsigned i;
+    assert(client2channel(&c->client) == c);
+    c->client.lock = client_connection_lcb;
+    c->client.unlock = client_connection_ucb;
     for (i = 0; i < create_listeners_cnt; i++) {
         create_listeners[i](c);
     }
@@ -202,13 +214,22 @@ void notify_channel_created(Channel * c) {
 
 void notify_channel_opened(Channel * c) {
     unsigned i;
+    assert(!is_channel_closed(c));
+    assert(c->state == ChannelStateConnected);
+    if (c->notified_open) return;
+    c->notified_open = 1;
     for (i = 0; i < open_listeners_cnt; i++) {
         open_listeners[i](c);
     }
+    notify_client_connected(&c->client);
 }
 
 void notify_channel_closed(Channel * c) {
     unsigned i;
+    assert(c->state != ChannelStateConnected);
+    if (!c->notified_open) return;
+    c->notified_open = 0;
+    notify_client_disconnected(&c->client);
     for (i = 0; i < close_listeners_cnt; i++) {
         close_listeners[i](c);
     }
@@ -224,12 +245,14 @@ TCFBroadcastGroup * broadcast_group_alloc(void) {
     p->out.splice_block = splice_block_all;
     p->out.cur = p->buf;
     p->out.end = p->buf + sizeof(p->buf);
+    p->ref_count = 1;
     return p;
 }
 
-void broadcast_group_free(TCFBroadcastGroup * p) {
+static void broadcast_group_dispose(TCFBroadcastGroup * p) {
     LINK * l = p->channels.next;
 
+    assert(p->ref_count == 0);
     assert(is_dispatch_thread());
     while (l != &p->channels) {
         Channel * c = bclink2channel(l);
@@ -241,6 +264,20 @@ void broadcast_group_free(TCFBroadcastGroup * p) {
     assert(list_is_empty(&p->channels));
     p->magic = 0;
     loc_free(p);
+}
+
+void broadcast_group_lock(TCFBroadcastGroup * p) {
+    assert(p->ref_count > 0);
+    assert(is_dispatch_thread());
+    p->ref_count++;
+}
+
+void broadcast_group_unlock(TCFBroadcastGroup * p) {
+    assert(p->ref_count > 0);
+    assert(is_dispatch_thread());
+    if (--(p->ref_count) == 0) {
+        broadcast_group_dispose(p);
+    }
 }
 
 void channel_set_broadcast_group(Channel * c, TCFBroadcastGroup * bcg) {
@@ -548,7 +585,7 @@ void add_channel_transport(const char * transportname, ChannelServerCreate creat
  * Start communication of a newly created channel
  */
 void channel_start(Channel * c) {
-    trace(LOG_PROTOCOL, "Starting channel %#lx %s", c, c->peer_name);
+    trace(LOG_PROTOCOL, "Starting channel %#" PRIxPTR " %s", (uintptr_t)c, c->peer_name);
     assert(c->protocol != NULL);
     assert(c->state == ChannelStateStartWait);
     c->state = ChannelStateStarted;
@@ -559,6 +596,6 @@ void channel_start(Channel * c) {
  * Close communication channel
  */
 void channel_close(Channel * c) {
-    trace(LOG_PROTOCOL, "Closing channel %#lx %s", c, c->peer_name);
+    trace(LOG_PROTOCOL, "Closing channel %#" PRIxPTR " %s", (uintptr_t)c, c->peer_name);
     c->close(c, 0);
 }

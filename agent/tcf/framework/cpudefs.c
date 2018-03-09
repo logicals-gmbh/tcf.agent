@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -166,24 +166,16 @@ int id2frame(const char * id, Context ** ctx, int * frame) {
 }
 
 const char * frame2id(Context * ctx, int frame) {
-    char id[256];
     assert(frame >= 0);
-    snprintf(id, sizeof(id), "FP%d.%s", frame, ctx->id);
-    return tmp_strdup(id);
+    return tmp_printf("FP%d.%s", frame, ctx->id);
 }
 
 const char * register2id(Context * ctx, int frame, RegisterDefinition * reg) {
-    char id[256];
     RegisterDefinition * defs = get_reg_definitions(ctx);
     assert(defs != NULL);
     assert(reg >= defs);
-    if (frame < 0) {
-        snprintf(id, sizeof(id), "R%d.%s", (int)(reg - defs), ctx->id);
-    }
-    else {
-        snprintf(id, sizeof(id), "R%d@%d.%s", (int)(reg - defs), frame, ctx->id);
-    }
-    return tmp_strdup(id);
+    if (frame < 0) return tmp_printf("R%d.%s", (int)(reg - defs), ctx->id);
+    return tmp_printf("R%d@%d.%s", (int)(reg - defs), frame, ctx->id);
 }
 
 int id2reg_num(const char * id, const char ** ctx_id, int * frame, unsigned * reg_num) {
@@ -322,14 +314,30 @@ LocationExpressionState * evaluate_location_expression(Context * ctx, StackFrame
                 size_t j;
                 size_t size = cmd->args.mem.size;
                 uint64_t n = 0;
-                uint8_t buf[8];
 
-                assert(size <= sizeof(buf));
-                if (context_read_mem(ctx, (ContextAddress)stk[stk_pos - 1], buf, size) < 0) exception(errno);
-                for (j = 0; j < size; j++) {
-                    n = (n << 8) | buf[cmd->args.mem.big_endian ? j : size - j - 1];
+                if (size <= sizeof(n)) {
+                    uint8_t buf[8];
+                    if (context_read_mem(ctx, (ContextAddress)stk[stk_pos - 1], buf, size) < 0) exception(errno);
+                    for (j = 0; j < size; j++) {
+                        n = (n << 8) | buf[cmd->args.mem.big_endian ? j : size - j - 1];
+                    }
+                    stk[stk_pos - 1] = n;
                 }
-                stk[stk_pos - 1] = n;
+                else if (state->pieces_cnt == 0 && i + 1 == cmd_cnt && stk_pos == 1) {
+                    LocationPiece * piece = NULL;
+                    if (state->pieces_cnt >= state->pieces_max) {
+                        state->pieces_max += 4;
+                        state->pieces = (LocationPiece *)tmp_realloc(state->pieces, state->pieces_max * sizeof(LocationPiece));
+                    }
+                    piece = state->pieces + state->pieces_cnt++;
+                    memset(piece, 0, sizeof(LocationPiece));
+                    piece->addr = (ContextAddress)stk[stk_pos - 1];
+                    piece->size = size;
+                    stk_pos--;
+                }
+                else {
+                    exception(ERR_INV_DATA_SIZE);
+                }
             }
             break;
         case SFT_CMD_WR_MEM:

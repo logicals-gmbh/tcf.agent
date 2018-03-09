@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -26,13 +26,10 @@
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
-#include <tcf/framework/protocol.h>
 #include <tcf/framework/channel.h>
 #include <tcf/framework/json.h>
-#include <tcf/framework/context.h>
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/trace.h>
-#include <tcf/framework/events.h>
 #include <tcf/framework/exceptions.h>
 #include <tcf/framework/signames.h>
 #include <tcf/framework/cache.h>
@@ -885,23 +882,6 @@ int continue_debug_context(Context * ctx, Channel * c,
     Context * grp = context_get_group(ctx, CONTEXT_GROUP_INTERCEPT);
     int err = 0;
 
-    EXT(grp)->reverse_run = 0;
-    switch (mode) {
-    case RM_REVERSE_RESUME:
-    case RM_REVERSE_STEP_OVER:
-    case RM_REVERSE_STEP_INTO:
-    case RM_REVERSE_STEP_OVER_LINE:
-    case RM_REVERSE_STEP_INTO_LINE:
-    case RM_REVERSE_STEP_OUT:
-    case RM_REVERSE_STEP_OVER_RANGE:
-    case RM_REVERSE_STEP_INTO_RANGE:
-    case RM_REVERSE_UNTIL_ACTIVE:
-        EXT(grp)->reverse_run = 1;
-        break;
-    }
-
-    if (context_has_state(ctx)) start_step_mode(ctx, c, mode, count, range_start, range_end);
-
     if (ctx->exited) {
         err = ERR_ALREADY_EXITED;
     }
@@ -911,13 +891,33 @@ int continue_debug_context(Context * ctx, Channel * c,
     else if (count < 1) {
         err = EINVAL;
     }
-    else if (resume_context_tree(ctx) < 0) {
-        err = errno;
+
+    if (!err) {
+        EXT(grp)->reverse_run = 0;
+        switch (mode) {
+        case RM_REVERSE_RESUME:
+        case RM_REVERSE_STEP_OVER:
+        case RM_REVERSE_STEP_INTO:
+        case RM_REVERSE_STEP_OVER_LINE:
+        case RM_REVERSE_STEP_INTO_LINE:
+        case RM_REVERSE_STEP_OUT:
+        case RM_REVERSE_STEP_OVER_RANGE:
+        case RM_REVERSE_STEP_INTO_RANGE:
+        case RM_REVERSE_UNTIL_ACTIVE:
+            EXT(grp)->reverse_run = 1;
+            break;
+        }
+
+        if (context_has_state(ctx)) start_step_mode(ctx, c, mode, count, range_start, range_end);
+
+        if (resume_context_tree(ctx) < 0) {
+            err = errno;
+            cancel_step_mode(ctx);
+        }
     }
 
     assert(err || !ext->intercepted);
     if (err) {
-        cancel_step_mode(ctx);
         errno = err;
         return -1;
     }
@@ -1570,7 +1570,7 @@ static BreakpointInfo * create_step_machine_breakpoint(ContextAddress addr, Cont
             json_write_boolean(out, 1);
             break;
         case 1:
-            snprintf(str, sizeof(str), "0x%" PRIX64, (uint64_t)addr);
+            snprintf(str, sizeof(str), "%#" PRIx64, (uint64_t)addr);
             json_write_string(out, str);
             break;
         case 2:
@@ -2654,6 +2654,13 @@ void set_context_state_name(Context * ctx, const char * name) {
 
         write_stream(out, MARKER_EOM);
     }
+}
+
+const char * get_context_state_name(Context * ctx) {
+    ContextExtensionRC * ext = EXT(ctx);
+    if (ext->intercepted) return get_suspend_reason(ctx);
+    if (ext->state_name) return ext->state_name;
+    return "Running";
 }
 
 int is_run_ctrl_idle(void) {

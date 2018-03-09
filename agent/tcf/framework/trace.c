@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2013 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -22,7 +22,6 @@ int log_mode = LOG_EVENTS | LOG_CHILD | LOG_WAITPID | LOG_CONTEXT | LOG_PROTOCOL
 
 #include <stdlib.h>
 #include <stdarg.h>
-#include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <tcf/framework/mdep-threads.h>
@@ -74,6 +73,9 @@ int print_trace(int mode, const char * fmt, ...) {
 #elif defined(_WRS_KERNEL)
 #elif defined(__SYMBIAN32__)
 #elif defined(__sun__)
+#elif defined(ANDROID)
+        __android_log_vprint(ANDROID_LOG_INFO, "TCF agent",
+                     fmt, ap);
 #else
         vsyslog(LOG_MAKEPRI(LOG_DAEMON, LOG_INFO), fmt, ap);
 #endif
@@ -179,6 +181,9 @@ void open_log_file(const char * log_name) {
     }
     else if (strcmp(log_name, LOG_NAME_STDERR) == 0) {
         log_file = stderr;
+#if defined(ANDROID)
+        use_syslog = 1;
+#else
         if (is_daemon()) {
 #if defined(_WIN32) || defined(__CYGWIN__)
 #elif defined(_WRS_KERNEL)
@@ -188,6 +193,7 @@ void open_log_file(const char * log_name) {
             openlog("tcf-agent", LOG_PID, LOG_DAEMON);
 #endif
         }
+#endif
     }
     else if ((log_file = fopen(log_name, "a")) == NULL) {
         fprintf(stderr, "TCF: error: cannot create log file %s\n", log_name);

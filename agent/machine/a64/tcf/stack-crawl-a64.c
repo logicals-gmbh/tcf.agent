@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2014, 2017 Xilinx, Inc. and others.
+ * Copyright (c) 2014-2018 Xilinx, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -22,12 +22,9 @@
 #if ENABLE_DebugContext
 
 #include <assert.h>
-#include <tcf/framework/errors.h>
-#include <tcf/framework/cpudefs.h>
 #include <tcf/framework/context.h>
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/trace.h>
-#include <tcf/services/stacktrace.h>
 #include <machine/a64/tcf/stack-crawl-a64.h>
 
 #define MAX_INST 200
@@ -121,6 +118,7 @@ static int read_byte(uint64_t addr, uint8_t * bt) {
         }
         c->size = info.size_valid;
 #else
+        c->size = 0;
         return -1;
 #endif
     }
@@ -1007,7 +1005,7 @@ static int trace_a64(void) {
         unsigned i;
         /* Unknown/undecoded. May alter some register, so invalidate file */
         for (i = 0; i < 30; i++) reg_data[i].o = 0;
-        trace(LOG_STACK, "Stack crawl: unknown ARM A64 instruction %08x", instr);
+        trace(LOG_STACK, "Stack crawl: unknown ARM A64 instruction %08" PRIx32, instr);
     }
 
     if (!trace_return && !trace_branch) {
@@ -1026,7 +1024,7 @@ static int trace_instructions(void) {
         unsigned t = 0;
         BranchData * b = NULL;
         if (chk_loaded(REG_ID_SP) < 0) return -1;
-        trace(LOG_STACK, "Stack crawl: pc 0x%" PRIX64 ", sp 0x%" PRIX64,
+        trace(LOG_STACK, "Stack crawl: pc %#" PRIx64 ", sp %#" PRIx64,
             pc_data.o ? pc_data.v : (uint64_t)0,
             reg_data[REG_ID_SP].o ? reg_data[REG_ID_SP].v : (uint64_t)0);
         for (t = 0; t < MAX_INST; t++) {

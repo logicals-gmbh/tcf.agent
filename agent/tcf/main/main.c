@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -108,7 +108,7 @@ static unsigned int idle_timeout;
 static unsigned int idle_count;
 
 static void check_idle_timeout(void * args) {
-    if (list_is_empty(&channel_root)) {
+    if (list_is_empty(&client_connection_root)) {
         idle_count++;
         if (idle_count > idle_timeout) {
             trace(LOG_ALWAYS, "No connections for %d seconds, shutting down", idle_timeout);
@@ -144,7 +144,7 @@ static void signal_handler(int sig) {
     }
 }
 
-#if defined(_POSIX_C_SOURCE)
+#if defined(_POSIX_C_SOURCE) && !defined(__MINGW32__)
 static void * signal_handler_thread(void * arg) {
     int sig  = 0;
     sigset_t * set = (sigset_t *)arg;
@@ -184,7 +184,7 @@ static BOOL CtrlHandler(DWORD ctrl) {
 #endif
 
 static void ini_signal_handlers(void) {
-#if defined(_POSIX_C_SOURCE)
+#if defined(_POSIX_C_SOURCE) && !defined(__MINGW32__)
     pthread_t thread;
     static sigset_t set;
     sigemptyset(&set);
@@ -220,7 +220,7 @@ static const char * help_text[] = {
 #endif
     "  -s<url>          set agent listening port and protocol, default is " DEFAULT_SERVER_URL,
     "  -S               print server properties in Json format to stdout",
-#if ENABLE_DebugContext
+#if ENABLE_GdbRemoteSerialProtocol
     "  -g<port>         start GDB Remote Serial Protocol server at the specified TCP port",
 #endif
     "  -I<idle-seconds> exit if there are no connections for the specified time",
@@ -346,7 +346,9 @@ int main(int argc, char ** argv) {
 #endif
             case 'L':
             case 's':
+#if ENABLE_GdbRemoteSerialProtocol
             case 'g':
+#endif
 #if ENABLE_Plugins
             case 'P':
 #endif

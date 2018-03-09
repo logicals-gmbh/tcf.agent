@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2016 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -221,7 +221,11 @@ int wsa_ioctlsocket(int socket, long cmd, unsigned long * args) {
     int res = 0;
     SetLastError(0);
     WSASetLastError(0);
+#if defined(__CYGWIN__) && defined(__x86_64__)
+    res = (ioctlsocket)(socket, cmd, (unsigned *)args);
+#else
     res = (ioctlsocket)(socket, cmd, args);
+#endif
     if (res != 0) {
         set_win32_errno(WSAGetLastError());
         return -1;
@@ -253,8 +257,9 @@ int wsa_closesocket(int socket) {
     return 0;
 }
 
-#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0600
-/* inet_ntop()/inet_pton() are not available before Windows Vista */
+/* inet_ntop()/inet_pton() are not available in MinGW */
+/* inet_ntop()/inet_pton() are not available in Windows before Windows Vista */
+#if defined(__MINGW32__) || (defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0600)
 const char * inet_ntop(int af, const void * src, char * dst, socklen_t size) {
     char * str = NULL;
     if (af != AF_INET) {
@@ -331,7 +336,7 @@ int clock_gettime(clockid_t clock_id, struct timespec * tp) {
     return -1;
 }
 
-void usleep(useconds_t useconds) {
+void usleep(unsigned useconds) {
     Sleep(useconds / 1000);
 }
 
@@ -885,14 +890,20 @@ ip_ifc_info* get_ip_ifc(void) {
 #if USE_locale
 #include <locale.h>
 #endif
-#include <langinfo.h>
+#if !defined(ANDROID)
+#  include <langinfo.h>
+#endif
 #include <sys/utsname.h>
 #if defined(__linux__)
 #  include <asm/unistd.h>
 #endif
 
 #if !defined(USE_clock_gettime)
-#  define USE_clock_gettime (!defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__APPLE__))
+#  if (!defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__APPLE__))
+#    define USE_clock_gettime 1
+#  else
+#    define USE_clock_gettime 0
+#  endif
 #endif
 
 #if !USE_clock_gettime
@@ -913,11 +924,9 @@ int clock_gettime(clockid_t clock_id, struct timespec * tp) {
 }
 #endif
 
-#if defined(__UCLIBC__)
-#include <fcntl.h>
-
+#if defined(__UCLIBC__) || defined(ANDROID)
 int posix_openpt(int flags) {
-    return (open("/dev/ptmx", flags));
+    return open("/dev/ptmx", flags);
 }
 #endif
 
@@ -958,7 +967,7 @@ const char * get_user_name(void) {
 }
 
 int tkill(pid_t pid, int signal) {
-#if defined(__linux__)
+#if defined(__linux__) && !defined(ANDROID)
     return syscall(__NR_tkill, pid, signal);
 #else
     return kill(pid, signal);
@@ -1077,7 +1086,7 @@ char * canonicalize_file_name(const char * path) {
     return strdup(buf);
 }
 
-#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__) || defined(__sun__)
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__) || defined(__sun__) || defined(ANDROID)
 
 char * canonicalize_file_name(const char * path) {
     char buf[PATH_MAX];
@@ -1086,7 +1095,7 @@ char * canonicalize_file_name(const char * path) {
     return strdup(res);
 }
 
-#elif defined(__UCLIBC__)
+#elif !USE_canonicalize_file_name
 
 char * canonicalize_file_name(const char * path) {
     return realpath(path, NULL);
@@ -1437,7 +1446,7 @@ void become_daemon(char **args) {
 
     if (!CreateProcess(fnm, make_cmd_from_args(args), NULL, NULL, TRUE,
                        DETACHED_PROCESS, NULL, NULL, &startupInfo, &prs_info)) {
-        fprintf(stderr, "CreateProcess failed 0x%lx\n", GetLastError());
+        fprintf(stderr, "CreateProcess failed 0x%lx\n", (unsigned long)GetLastError());
         exit(1);
     }
 
@@ -1445,7 +1454,7 @@ void become_daemon(char **args) {
         /* Make read side non-blocking */
         DWORD pipemode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
         if (!SetNamedPipeHandleState((HANDLE)_get_osfhandle(fdpairs[i*2]), &pipemode, NULL, NULL)) {
-            fprintf(stderr, "SetNamedPipeHandleState failed 0x%lx\n", GetLastError());
+            fprintf(stderr, "SetNamedPipeHandleState failed 0x%lx\n", (unsigned long)GetLastError());
             exit(1);
         }
 
@@ -1465,7 +1474,7 @@ void become_daemon(char **args) {
             }
             else if (GetLastError() != ERROR_NO_DATA) {
                 if (GetLastError() != ERROR_BROKEN_PIPE) {
-                    fprintf(stderr, "SetNamedPipeHandleState failed 0x%lx\n", GetLastError());
+                    fprintf(stderr, "SetNamedPipeHandleState failed 0x%lx\n", (unsigned long)GetLastError());
                 }
                 fdpairs[i*2] = fdpairs[(npairs - 1)*2];
                 fdpairs[i*2 + 1] = fdpairs[(npairs - 1)*2 + 1];
@@ -1496,7 +1505,7 @@ void close_out_and_err(void) {
         close(fd);
 }
 
-#elif defined(_WRS_KERNEL) || defined (__SYMBIAN32__)
+#elif defined(_WRS_KERNEL) || defined (__SYMBIAN32__) || defined(ANDROID)
 
 int is_daemon(void) {
     return 0;
@@ -1806,7 +1815,7 @@ const char * double_to_str(double n) {
     return tmp_strdup(buf + i);
 }
 
-#if !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__APPLE__) && !defined(__VXWORKS__)
+#if !USE_strlcpy_strlcat
 
 size_t strlcpy(char * dst, const char * src, size_t size) {
     char ch;
@@ -1840,7 +1849,11 @@ size_t strlcat(char * dst, const char * src, size_t size) {
 #endif
 
 #if !defined(USE_uuid_generate)
-#  define USE_uuid_generate (defined(__linux__) && !defined(__UCLIBC__) && !defined(ANDROID))
+#  if (defined(__linux__) && !defined(__UCLIBC__) && !defined(ANDROID))
+#    define USE_uuid_generate 1
+#  else
+#    define USE_uuid_generate 0
+#  endif
 #endif
 
 #if USE_uuid_generate

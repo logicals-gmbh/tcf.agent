@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -40,7 +40,6 @@
 #include <assert.h>
 #include <tcf/framework/mdep-fs.h>
 #include <tcf/framework/myalloc.h>
-#include <tcf/framework/protocol.h>
 #include <tcf/framework/trace.h>
 #include <tcf/framework/context.h>
 #include <tcf/framework/json.h>
@@ -489,7 +488,7 @@ static void command_attach(char * token, Channel * c) {
     else {
         AttachDoneArgs * data = (AttachDoneArgs *)loc_alloc_zero(sizeof *data);
         data->c = c;
-        strcpy(data->token, token);
+        strlcpy(data->token, token, sizeof(data->token));
         if (context_attach(pid, attach_done, data, 0) == 0) {
             channel_lock_with_msg(c, PROCESSES[0]);
             return;
@@ -586,16 +585,8 @@ static void read_sigset_bit(InputStream * inp, void * args) {
 
 static void read_sigset(InputStream * inp, SigSet * set, int * not_null) {
     memset(set, 0, sizeof(SigSet));
-    if (json_peek(inp) == 'n') {
-        read_stream(inp);
-        json_test_char(inp, 'u');
-        json_test_char(inp, 'l');
-        json_test_char(inp, 'l');
-        *not_null = 0;
-    }
-    else if (json_peek(inp) == '[') {
-        json_read_array(inp, read_sigset_bit, set);
-        *not_null = 1;
+    if (json_peek(inp) == '[' || json_peek(inp) == 'n') {
+        *not_null = json_read_array(inp, read_sigset_bit, set);
     }
     else {
         unsigned bit;
@@ -881,6 +872,7 @@ static void process_exited(ChildProcess * prs) {
     semTake(prs_list_lock, WAIT_FOREVER);
 #endif
     list_remove(&prs->link);
+    broadcast_group_unlock(prs->bcg);
     if (prs->inp_struct) {
         ProcessInput * inp = prs->inp_struct;
         if (!inp->req_posted) {
@@ -1056,7 +1048,7 @@ static int setenv(const char * name, const char * val, int overwrite) {
     _putenv_s(name, val);
     return 0;
 }
-#elif defined(__MINGW32__)
+#elif defined(__MINGW32__) && __MINGW32_MAJOR_VERSION < 5
 static int setenv(const char * name, const char * val, int overwrite) {
     int len = strlen(name) + strlen(val) + 2;
     char * str = (char *)loc_alloc(len);
@@ -1227,6 +1219,7 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
         (*prs)->pid = pid;
         (*prs)->tty = -1;
         (*prs)->bcg = c->bcg;
+        broadcast_group_lock(c->bcg);
         strlcpy((*prs)->service, params->service, sizeof((*prs)->service));
         (*prs)->inp_struct = write_process_input(*prs, fpipes[0][1]);
         (*prs)->out_struct = read_process_output(*prs, fpipes[1][0]);
@@ -1320,6 +1313,7 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
             (*prs)->pid = pid;
             (*prs)->tty = -1;
             (*prs)->bcg = c->bcg;
+            broadcast_group_lock(c->bcg);
             strlcpy((*prs)->service, params->service, sizeof((*prs)->service));
             (*prs)->inp_struct = write_process_input(*prs, pipes[0][0]);
             (*prs)->out_struct = read_process_output(*prs, pipes[0][0]);
@@ -1356,6 +1350,9 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
         int p_out[2];
         int p_err[2];
 
+        p_inp[0] = p_inp[1] = -1;
+        p_out[0] = p_out[1] = -1;
+        p_err[0] = p_err[1] = -1;
         if (pipe(p_inp) < 0 || pipe(p_out) < 0 || pipe(p_err) < 0) err = errno;
 
         if (err == 0 && (p_inp[0] < 3 || p_out[1] < 3 || p_err[1] < 3)) {
@@ -1389,6 +1386,13 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
                 while (!err && fd > 3 && fd - 1 != p_log[1]) close(--fd);
                 if (!err && params->attach && context_attach_self() < 0) err = errno;
                 if (!err && params->dir != NULL && chdir(params->dir) < 0) err = errno;
+#if defined(_POSIX_C_SOURCE)
+                if (!err) {
+                    sigset_t set;
+                    sigemptyset(&set);
+                    if (sigprocmask(SIG_SETMASK, &set, NULL) < 0) err = errno;
+                }
+#endif
                 if (!err) {
                     if (envp != NULL) environ = envp;
                     execvp(exe, args);
@@ -1403,6 +1407,7 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
             (*prs)->pid = pid;
             (*prs)->tty = -1;
             (*prs)->bcg = c->bcg;
+            broadcast_group_lock(c->bcg);
             strlcpy((*prs)->service, params->service, sizeof((*prs)->service));
             (*prs)->inp_struct = write_process_input(*prs, p_inp[1]);
             (*prs)->out_struct = read_process_output(*prs, p_out[0]);
@@ -1427,7 +1432,7 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
         /* http://docs.oracle.com/cd/E18752_01/html/816-4855/termsub15-44781.html */
         fd_tty_master = open("/dev/ptmx", O_RDWR);
 #else
-        fd_tty_master = posix_openpt(O_RDWR|O_NOCTTY);
+        fd_tty_master = posix_openpt(O_RDWR | O_NOCTTY);
 #endif
         if (fd_tty_master < 0 || grantpt(fd_tty_master) < 0 || unlockpt(fd_tty_master) < 0) err = errno;
         if (!err && (tty_slave_name = ptsname(fd_tty_master)) == NULL) err = EINVAL;
@@ -1467,6 +1472,13 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
                 while (!err && fd > 3 && fd - 1 != p_log[1]) close(--fd);
                 if (!err && params->attach && context_attach_self() < 0) err = errno;
                 if (!err && params->dir != NULL && chdir(params->dir) < 0) err = errno;
+#if defined(_POSIX_C_SOURCE)
+                if (!err) {
+                    sigset_t set;
+                    sigemptyset(&set);
+                    if (sigprocmask(SIG_SETMASK, &set, NULL) < 0) err = errno;
+                }
+#endif
                 if (!err) {
                     if (envp != NULL) environ = envp;
                     execvp(exe, args);
@@ -1481,6 +1493,7 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
             (*prs)->pid = pid;
             (*prs)->tty = fd_tty_master;
             (*prs)->bcg = c->bcg;
+            broadcast_group_lock(c->bcg);
             strlcpy((*prs)->service, params->service, sizeof((*prs)->service));
             (*prs)->inp_struct = write_process_input(*prs, fd_tty_master);
             (*prs)->out_struct = read_process_output(*prs, fd_tty_out);
@@ -1683,7 +1696,7 @@ static void command_start(char * token, Channel * c, void * x) {
             int mode = params.attach_mode;
             AttachDoneArgs * data = (AttachDoneArgs *)loc_alloc_zero(sizeof *data);
             data->c = c;
-            strcpy(data->token, token);
+            strlcpy(data->token, token, sizeof(data->token));
             data->set_dont_stop = params.set_dont_stop;
             data->set_dont_pass = params.set_dont_pass;
             sigset_copy(&data->sig_dont_stop, &params.sig_dont_stop);

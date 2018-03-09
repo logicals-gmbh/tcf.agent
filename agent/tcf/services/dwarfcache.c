@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2015 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -28,7 +28,6 @@
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/trace.h>
 #include <tcf/services/dwarf.h>
-#include <tcf/services/dwarfio.h>
 #include <tcf/services/dwarfcache.h>
 #include <tcf/services/dwarfexpr.h>
 #include <tcf/services/stacktrace.h>
@@ -877,10 +876,28 @@ static void read_object_info(U2_T Tag, U2_T Attr, U2_T Form) {
             Unit->mDir = (char *)dio_gFormDataAddr;
             break;
         case AT_stmt_list:
-            if (Form == FORM_ADDR) {
-                /* Workaround: some compilers incorrectly use FORM_ADDR for AT_stmt_list */
+            if (Form == FORM_ADDR || Form == FORM_SEC_OFFSET) {
                 Unit->mLineInfoOffs = dio_gFormData;
-                if (dio_gFormSection != NULL) Unit->mLineInfoOffs -= dio_gFormSection->addr;
+                if (dio_gFormSection != NULL) {
+                    Unit->mLineInfoOffs -= dio_gFormSection->addr;
+                    Unit->mLineInfoSection = dio_gFormSection;
+                }
+                else {
+                    unsigned idx;
+                    ELF_File * file = Unit->mFile;
+                    for (idx = 1; idx < file->section_cnt; idx++) {
+                        ELF_Section * sec = file->sections + idx;
+                        if (sec->size == 0) continue;
+                        if (sec->name == NULL) continue;
+                        if (sec->type == SHT_NOBITS) continue;
+                        if (Unit->mLineInfoOffs >= sec->addr && Unit->mLineInfoOffs < sec->addr + sec->size &&
+                            strcmp(sec->name, sUnitDesc.mVersion <= 1 ? ".line" : ".debug_line") == 0) {
+                            Unit->mLineInfoOffs -= sec->addr;
+                            Unit->mLineInfoSection = sec;
+                            break;
+                        }
+                    }
+                }
                 break;
             }
             dio_ChkData(Form);
@@ -950,7 +967,7 @@ static void read_object_refs(ELF_Section * Section) {
                     ref.obj->mFlags |= ref.org->mFlags & ~(DOIF_children_loaded | DOIF_declaration | DOIF_specification);
                     if (ref.obj->mFlags & DOIF_specification) {
                         ref.org->mDefinition = ref.obj;
-                        if ((ref.obj->mFlags & (DOIF_low_pc | DOIF_ranges)) == 0) {
+                        if ((ref.obj->mFlags & (DOIF_low_pc | DOIF_ranges | DOIF_location)) == 0) {
                             ref.obj->mFlags |= ref.org->mFlags & DOIF_declaration;
                         }
                     }
@@ -1199,6 +1216,21 @@ static int cmp_pub_objects(ObjectInfo * x, ObjectInfo * y) {
         DOIF_const_value;
 
     if ((x->mFlags & flags) != (y->mFlags & flags)) return 0;
+    if (x->mParent != y->mParent) {
+        ObjectInfo * px = x->mParent;
+        ObjectInfo * py = y->mParent;
+        for (;;) {
+            if (px == NULL || py == NULL) return 0;
+            if (px->mTag != py->mTag) return 0;
+            if (px->mTag != TAG_namespace) break;
+            if (px->mName != py->mName) {
+                if (px->mName == NULL || py->mName == NULL) return 0;
+                if (strcmp(px->mName, py->mName) != 0) return 0;
+            }
+            px = px->mParent;
+            py = py->mParent;
+        }
+    }
     switch (x->mTag) {
     case TAG_base_type:
     case TAG_fund_type:
@@ -2307,7 +2339,8 @@ static void load_line_numbers_v2(CompUnit * Unit, U8_T unit_size, int dwarf64) {
 void load_line_numbers(CompUnit * Unit) {
     Trap trap;
     DWARFCache * Cache = (DWARFCache *)Unit->mFile->dwarf_dt_cache;
-    ELF_Section * LineInfoSection = Unit->mDesc.mVersion <= 1 ? Cache->mDebugLineV1 : Cache->mDebugLineV2;
+    ELF_Section * LineInfoSection = Unit->mLineInfoSection;
+    if (LineInfoSection == NULL) LineInfoSection = Unit->mDesc.mVersion <= 1 ? Cache->mDebugLineV1 : Cache->mDebugLineV2;
     if (LineInfoSection == NULL) return;
     if (Unit->mLineInfoLoaded) return;
     if (elf_load(LineInfoSection)) exception(errno);

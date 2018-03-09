@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2013, 2017 Xilinx, Inc. and others.
+ * Copyright (c) 2013-2018 Xilinx, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -39,11 +39,10 @@
 #if ENABLE_DebugContext
 
 #include <assert.h>
-#include <tcf/framework/errors.h>
-#include <tcf/framework/cpudefs.h>
 #include <tcf/framework/context.h>
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/trace.h>
+#include <tcf/services/symbols.h>
 #include <tcf/services/stacktrace.h>
 #include <machine/arm/tcf/stack-crawl-arm.h>
 
@@ -142,6 +141,7 @@ static int read_byte(uint32_t addr, uint8_t * bt) {
         }
         c->size = info.size_valid;
 #else
+        c->size = 0;
         return -1;
 #endif
     }
@@ -1691,6 +1691,15 @@ static void trace_arm_extra_ldr_str(uint32_t instr) {
     }
 }
 
+static uint32_t modified_immediate_constant(uint32_t instr) {
+    uint8_t shift_dist  = (instr & 0x0f00) >> 8;
+    uint8_t shift_const = (instr & 0x00ff);
+
+    /* rotate const right by 2 * shift_dist */
+    shift_dist *= 2;
+    return (shift_const >> shift_dist) | (shift_const << (32 - shift_dist));
+}
+
 static void trace_arm_data_processing_instr(uint32_t instr) {
     uint32_t cond = (instr >> 28) & 0xf;
     int I = (instr & 0x02000000) != 0;
@@ -1704,13 +1713,7 @@ static void trace_arm_data_processing_instr(uint32_t instr) {
 
     /* Decode operand 2 */
     if (I) {
-        uint8_t shift_dist  = (operand2 & 0x0f00) >> 8;
-        uint8_t shift_const = (operand2 & 0x00ff);
-
-        /* rotate const right by 2 * shift_dist */
-        shift_dist *= 2;
-        op2val    = (shift_const >> shift_dist) |
-                    (shift_const << (32 - shift_dist));
+        op2val    = modified_immediate_constant(operand2);
         op2origin = REG_VAL_OTHER;
     }
     else {
@@ -1967,6 +1970,7 @@ static void trace_arm_data_processing_instr(uint32_t instr) {
 
     if (rd == 15 && (instr & (1 << 20)) != 0) {
         return_from_exception();
+        trace_return = 1;
     }
 }
 
@@ -2211,7 +2215,7 @@ static int trace_arm(void) {
         unsigned i;
         /* Unknown/undecoded. May alter some register, so invalidate file */
         for (i = 0; i < 11; i++) reg_data[i].o = 0;
-        trace(LOG_STACK, "Stack crawl: unknown ARM A32 instruction %08x", instr);
+        trace(LOG_STACK, "Stack crawl: unknown ARM A32 instruction %08" PRIx32, instr);
     }
 
     if (!trace_return && !trace_branch) {
@@ -2230,16 +2234,38 @@ static int trace_instructions(void) {
     RegData org_4to11[8];
     RegData org_cpsr = cpsr_data;
     RegData org_spsr = spsr_data;
+    uint32_t func_addr = 0;
+    uint32_t func_size = 0;
+
+    memcpy(org_4to11, reg_data + 4, sizeof(org_4to11));
+
+#if ENABLE_Symbols
+    if (chk_loaded(15) == 0) {
+        Symbol * sym = NULL;
+        int sym_class = SYM_CLASS_UNKNOWN;
+        ContextAddress sym_addr = reg_data[15].v;
+        ContextAddress sym_size = 0;
+        if (sym_addr > 0 && !stk_frame->is_top_frame) sym_addr--;
+        if (find_symbol_by_addr(stk_ctx, STACK_NO_FRAME, sym_addr, &sym) == 0 &&
+                get_symbol_class(sym, &sym_class) == 0 && sym_class == SYM_CLASS_FUNCTION &&
+                get_symbol_size(sym, &sym_size) == 0 && sym_size != 0 &&
+                get_symbol_address(sym, &sym_addr) == 0 && sym_addr != 0 &&
+                sym_addr + sym_size <= 0x100000000) {
+            func_addr = (uint32_t)sym_addr;
+            func_size = (uint32_t)sym_size;
+            trace(LOG_STACK, "Function symbol: addr 0x%08" PRIx32 ", size 0x%08" PRIx32, func_addr, func_size);
+        }
+    }
+#endif
 
     TRACE_INSTRUCTIONS_HOOK;
 
-    memcpy(org_4to11, reg_data + 4, sizeof(org_4to11));
     for (;;) {
         unsigned t = 0;
         BranchData * b = NULL;
         if (chk_loaded(13) < 0) return -1;
         if (chk_loaded(15) < 0) return -1;
-        trace(LOG_STACK, "Stack crawl: pc 0x%08x, sp 0x%08x",
+        trace(LOG_STACK, "Stack crawl: pc 0x%08" PRIx32 ", sp 0x%08" PRIx32,
             reg_data[15].o ? reg_data[15].v : 0,
             reg_data[13].o ? reg_data[13].v : 0);
         for (t = 0; t < 200; t++) {
@@ -2257,6 +2283,10 @@ static int trace_instructions(void) {
             }
             else if (!cpsr_data.o) {
                 error = set_errno(ERR_OTHER, "CPSR value not available");
+            }
+            else if (func_size > 0 && (reg_data[15].v < func_addr ||
+                    (func_addr + func_size > func_addr && reg_data[15].v >= func_addr + func_size))) {
+                error = set_errno(ERR_OTHER, "PC outside current function");
             }
             else {
                 int r = 0;
@@ -2306,6 +2336,60 @@ static int trace_instructions(void) {
 
     EPILOGUE_NOT_FOUND_HOOK;
 
+    if (func_size > 12 && (func_addr & 0x3) == 0) {
+        unsigned n = 0;
+        /* Check for common ARM prologue pattern */
+        while (n < 3 && n < func_size / 4 - 1) {
+            uint32_t instr = 0;
+            uint32_t push_regs = 0;
+            if (read_word(func_addr + n * 4, &instr) < 0) break;
+            if ((instr & 0xffffe000) == 0xe92d4000) {
+                /* PUSH {..., lr} */
+                push_regs = instr & 0xffff;
+            }
+            else if ((instr & 0xffffffff) == 0xe52de004) {
+                /* PUSH {lr} */
+                push_regs |= 1 << 14;
+            }
+            if (push_regs) {
+                reg_data[13] = org_sp;
+                if (chk_loaded(13) == 0) {
+                    uint32_t addr = reg_data[13].v;
+                    while (n < 8 && n < func_size / 4 - 1) {
+                        if (read_word(func_addr + n * 4, &instr) < 0) break;
+                        if ((instr  & 0xfffff000) == 0xe24dd000) {
+                            /* SUB sp, sp, #... */
+                            addr += modified_immediate_constant(instr);
+                            break;
+                        }
+                        n++;
+                    }
+                    for (i = 0; i < 16; i++) {
+                        if (push_regs & (1 << i)) {
+                            reg_data[i].o = REG_VAL_STACK;
+                            reg_data[i].v = addr;
+                            addr += 4;
+                        }
+                        else if (i >= 4 && i <= 11) { /* Local variables */
+                            reg_data[i] = org_4to11[i - 4];
+                        }
+                        else {
+                            reg_data[i].o = 0;
+                        }
+                    }
+                    reg_data[13].o = REG_VAL_OTHER;
+                    reg_data[13].v = addr;
+                    reg_data[15] = reg_data[14];
+                    reg_data[14].o = 0;
+                    bx_write_pc();
+                    return 0;
+                }
+                break;
+            }
+            n++;
+        }
+    }
+
     for (i = 0; i < REG_DATA_SIZE; i++) {
         if (i >= 4 && i <= 11) { /* Local variables */
             reg_data[i] = org_4to11[i - 4];
@@ -2316,7 +2400,7 @@ static int trace_instructions(void) {
     }
     cpsr_data.o = 0;
     spsr_data.o = 0;
-    if (org_cpsr.o && org_spsr.o && org_lr.o) {
+    if (org_cpsr.o && org_spsr.o && ((org_spsr.v & 0x1f) > 0x10) && org_lr.o) {
         cpsr_data = org_cpsr;
         spsr_data = org_spsr;
         reg_data[15] = org_lr;

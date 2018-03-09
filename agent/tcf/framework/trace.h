@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2012 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -52,7 +52,7 @@ extern int log_mode;
  * Print a trace message into log file.
  * Use macro 'trace' instead of calling this function directly.
  */
-extern int print_trace(int mode, const char * fmt, ...);
+extern int print_trace(int mode, const char * fmt, ...) ATTR_PRINTF(2, 3);
 
 extern FILE * log_file;
 
@@ -60,7 +60,7 @@ extern FILE * log_file;
 
 #else /* not ENABLE_Trace */
 
-#if (defined(_MSC_VER) && _MSC_VER >= 1400) || __GNUC__
+#if (defined(_MSC_VER) && _MSC_VER >= 1400) || defined(__GNUC__)
 #  define trace(...) ((void)0)
 #else
 #  define trace 0 &&

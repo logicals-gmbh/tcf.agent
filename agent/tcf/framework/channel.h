@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2016 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007, 2016-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -23,6 +23,7 @@
 #include <tcf/framework/streams.h>
 #include <tcf/framework/link.h>
 #include <tcf/framework/peer.h>
+#include <tcf/framework/client.h>
 #include <tcf/framework/shutdown.h>
 
 extern ShutdownInfo channel_shutdown;
@@ -31,6 +32,12 @@ extern LINK channel_server_root;
 
 #define chanlink2channelp(A) ((Channel *)((char *)(A) - offsetof(Channel, chanlink)))
 #define servlink2channelserverp(A) ((ChannelServer *)((char *)(A) - offsetof(ChannelServer, servlink)))
+
+/*
+ * broadcast_group_free() API is deprecated and replaced by
+ * broadcast_group_unlock() API.
+ */
+#define broadcast_group_free broadcast_group_unlock
 
 struct Protocol;
 typedef struct TCFBroadcastGroup TCFBroadcastGroup;
@@ -42,6 +49,7 @@ struct TCFBroadcastGroup {
     unsigned char buf[256];
     OutputStream out;                   /* Broadcast stream */
     LINK channels;                      /* Channels in group */
+    unsigned int ref_count;             /* reference count, see broadcast_group_lock() and broadcast_group_unlock() */
 };
 
 enum {
@@ -72,6 +80,8 @@ struct Channel {
     int state;                          /* Current state */
     int disable_zero_copy;              /* Don't send ZeroCopy in Hello message even if we support it */
     int incoming;                       /* Created by an incoming connect */
+    ClientConnection client;
+    int notified_open;
 
     /* Populated by channel implementation */
     void (*start_comm)(Channel *);      /* Start communication */
@@ -95,6 +105,8 @@ struct ChannelServer {
     void * client_data;                 /* Client data */
     void (*new_conn)(ChannelServer *, Channel *); /* New connection call back */
     void (*close)(ChannelServer *);     /* Close channel server */
+    struct Protocol * protocol;         /* Channel protocol */
+    TCFBroadcastGroup * bcg;            /* Broadcast group */
 };
 
 /*
@@ -199,9 +211,17 @@ extern void channel_close(Channel *);
 extern TCFBroadcastGroup * broadcast_group_alloc(void);
 
 /*
- * Remove channels from Broadcast Group and deallocate the group object.
+ * Increment reference counter of broadcast group.
+ * While ref count > 0 object will not be deleted.
  */
-extern void broadcast_group_free(TCFBroadcastGroup *);
+void broadcast_group_lock(TCFBroadcastGroup *);
+
+/*
+ * Decrement reference counter.
+ * If ref count == 0, remove channels from Broadcast Group and deallocate
+ * the group object.
+ */
+void broadcast_group_unlock(TCFBroadcastGroup *);
 
 /*
  * Add a channel to a Broadcast Group.

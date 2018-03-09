@@ -90,29 +90,55 @@ static void add_hex_uint64(uint64_t n) {
     while (i > 0) add_char(s[--i]);
 }
 
-#if 0 /* Not used yet */
 static void add_flt_uint32(uint32_t n) {
-    char buf[32];
+    char str[32];
     union {
         uint32_t n;
         float f;
     } u;
     u.n = n;
-    snprintf(buf, sizeof(buf), "%g", u.f);
-    add_str(buf);
+    snprintf(str, sizeof(str), "%#g", u.f);
+    add_str(str);
 }
 
 static void add_flt_uint64(uint64_t n) {
-    char buf[32];
+    char str[32];
     union {
         uint64_t n;
         double d;
     } u;
     u.n = n;
-    snprintf(buf, sizeof(buf), "%g", u.d);
-    add_str(buf);
+    snprintf(str, sizeof(str), "%#g", u.d);
+    add_str(str);
 }
-#endif
+
+static void add_vfp_expand_imm(uint32_t imm8, int dbl) {
+    int sign = (imm8 >> 7) & 1;
+    if (!dbl) {
+        unsigned e = 8;
+        unsigned f = 23;
+        unsigned exp = 1 << (e - 1);
+        uint32_t res = 0;
+        if ((imm8 >> 6) & 1) exp -= 4;
+        exp |= (imm8 >> 4) & 3;
+        res |= (uint32_t)sign << 31;
+        res |= (uint32_t)exp << f;
+        res |= (uint32_t)(imm8 & 0xf) << (f - 4);
+        add_flt_uint32(res);
+    }
+    else {
+        unsigned e = 11;
+        unsigned f = 52;
+        unsigned exp = 1 << (e - 1);
+        uint64_t res = 0;
+        if ((imm8 >> 6) & 1) exp -= 4;
+        exp |= (imm8 >> 4) & 3;
+        res |= (uint64_t)sign << 63;
+        res |= (uint64_t)exp << f;
+        res |= (uint64_t)(imm8 & 0xf) << (f - 4);
+        add_flt_uint64(res);
+    }
+}
 
 static void add_reg_name(uint32_t n, int sf, int sp) {
     if (n == 31) {
@@ -124,20 +150,8 @@ static void add_reg_name(uint32_t n, int sf, int sp) {
     add_dec_uint32(n);
 }
 
-static void add_fp_reg_name_v(uint32_t n, int q) {
+static void add_fp_reg_name_q(uint32_t n, uint32_t sz, int q) {
     add_char('v');
-    add_dec_uint32(n);
-    add_char('.');
-    add_str(q ? "16b" : "8b");
-}
-
-static void add_fp_reg_name(uint32_t n, uint32_t sz, int q) {
-    switch (sz) {
-    case 0: add_char('b'); break;
-    case 1: add_char('h'); break;
-    case 2: add_char('s'); break;
-    default: add_char('d'); break;
-    }
     add_dec_uint32(n);
     add_char('.');
     switch (sz) {
@@ -145,6 +159,18 @@ static void add_fp_reg_name(uint32_t n, uint32_t sz, int q) {
     case 1: add_str(q ? "8h" : "4h"); break;
     case 2: add_str(q ? "4s" : "2s"); break;
     default: add_str(q ? "2d" : ""); break;
+    }
+}
+
+static void add_fp_reg_name(uint32_t n, uint32_t sz) {
+    add_char('v');
+    add_dec_uint32(n);
+    add_char('.');
+    switch (sz) {
+    case 0: add_char('b'); break;
+    case 1: add_char('h'); break;
+    case 2: add_char('s'); break;
+    default: add_char('d'); break;
     }
 }
 
@@ -198,6 +224,9 @@ static void add_addr(uint64_t addr) {
 
 static void add_sys_reg_name(uint32_t reg) {
     switch (reg) {
+    case 55303: add_str("dczid_el0"); return;
+    case 55840: add_str("fpcr"); return;
+    case 55841: add_str("fpsr"); return;
     case 56962: add_str("tpidr_el0"); return;
     }
     add_dec_uint32(reg);
@@ -418,6 +447,7 @@ static void data_processing_immediate(void) {
         uint32_t op = (instr >> 29) & 3;
         uint32_t hw = (instr >> 21) & 3;
         uint64_t imm = (instr >> 5) & 0xffff;
+        if (!sf && (hw & 2) != 0) return;
         if ((op == 0 || op == 2) && (imm > 0 || hw == 0)) {
             add_str("mov");
             imm = imm << (hw * 16);
@@ -748,6 +778,59 @@ static void branch_exception_system(void) {
         else if (l == 0 && op0 == 1) {
             /* SYS */
             uint32_t crm = (instr >> 8) & 0xf;
+            if (op1 == 3 && crn == 7 && crm == 4 && op2 == 1) {
+                add_str("dc zva, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 0 && crn == 7 && crm == 6 && op2 == 1) {
+                add_str("dc ivac, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 0 && crn == 7 && crm == 6 && op2 == 2) {
+                add_str("dc isw, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 3 && crn == 7 && crm == 10 && op2 == 1) {
+                add_str("dc cvac, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 0 && crn == 7 && crm == 10 && op2 == 2) {
+                add_str("dc csw, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 3 && crn == 7 && crm == 11 && op2 == 1) {
+                add_str("dc cvau, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 3 && crn == 7 && crm == 14 && op2 == 1) {
+                add_str("dc civac, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 0 && crn == 7 && crm == 14 && op2 == 2) {
+                add_str("dc cisw, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
+            if (op1 == 0 && crn == 7 && crm == 1 && op2 == 0) {
+                add_str("ic ialluis, ");
+                return;
+            }
+            if (op1 == 0 && crn == 7 && crm == 5 && op2 == 0) {
+                add_str("ic iallu, ");
+                return;
+            }
+            if (op1 == 3 && crn == 7 && crm == 5 && op2 == 1) {
+                add_str("ic ivau, ");
+                add_reg_name(rt, 1, 1);
+                return;
+            }
             add_str("sys #");
             add_dec_uint32(op1);
             add_str(", c");
@@ -1248,32 +1331,41 @@ static void loads_and_stores(void) {
     if ((instr & 0xbfbf0000) == 0x0c000000 || (instr & 0xbfa00000) == 0x0c800000) {
         /* AdvSIMD load/store multiple structures */
         /* AdvSIMD load/store multiple structures (post-indexed) */
-        int post_indexed = (instr & (1 << 28)) != 0;
+        int post_indexed = (instr & (1 << 23)) != 0;
         int Q = (instr >> 30) & 1;
         int L = (instr >> 22) & 1;
         uint32_t opcode = (instr >> 12) & 0xf;
         uint32_t size = (instr >> 10) & 3;
         uint32_t rm = (instr >> 16) & 0x1f;
         uint32_t rn = (instr >> 5) & 0x1f;
-        unsigned n = 0;
-        unsigned i;
+        uint32_t rt = instr & 0x1f;
+        unsigned rno = 0;
+        unsigned sno = 0;
         switch (opcode) {
-        case  0: n = 4; break;
-        case  2: n = 4; break;
-        case  4: n = 3; break;
-        case  6: n = 3; break;
-        case  7: n = 1; break;
-        case  8: n = 2; break;
-        case 10: n = 2; break;
+        case  0: rno = 4; sno = 4; break;
+        case  2: rno = 4; sno = 1; break;
+        case  4: rno = 3; sno = 3; break;
+        case  6: rno = 3; sno = 1; break;
+        case  7: rno = 1; sno = 1; break;
+        case  8: rno = 2; sno = 2; break;
+        case 10: rno = 2; sno = 1; break;
         default: return;
         }
         add_str(L ? "ld" : "st");
         if (instr & (1 << 14)) add_char('1');
-        else add_char((char)('0' + n));
+        else add_char((char)('0' + sno));
         add_str(" { ");
-        for (i = 0; i < n; i++) {
-            if (i > 0) add_str(", ");
-            add_fp_reg_name((instr & 0x1f) + i, size, Q);
+        if (rno > 2 && rt < rt + rno - 1) {
+            add_fp_reg_name_q(rt, size, Q);
+            add_str("-");
+            add_fp_reg_name_q(rt + rno - 1, size, Q);
+        }
+        else {
+            unsigned i;
+            for (i = 0; i < rno; i++) {
+                if (i > 0) add_str(", ");
+                add_fp_reg_name_q(rt + i, size, Q);
+            }
         }
         add_str(" }, ");
         add_char('[');
@@ -1282,7 +1374,8 @@ static void loads_and_stores(void) {
         if (post_indexed) {
             add_str(", ");
             if (rm == 0x1f) {
-                add_str(Q ? "#64" : "#32");
+                add_char('#');
+                add_dec_uint32((Q ? 16 : 8) * rno);
             }
             else {
                 add_reg_name(rm, 1, 0);
@@ -1291,10 +1384,10 @@ static void loads_and_stores(void) {
         return;
     }
 
-    if ((instr & 0xbf9f0000) == 0x0d000000) {
+    if ((instr & 0xbf9f0000) == 0x0d000000 || (instr & 0xbf800000) == 0x0d800000) {
         /* AdvSIMD load/store single structure */
         /* AdvSIMD load/store single structure (post-indexed) */
-        int post_indexed = (instr & (1 << 28)) != 0;
+        int post_indexed = (instr & (1 << 23)) != 0;
         int Q = (instr >> 30) & 1;
         int L = (instr >> 22) & 1;
         int R = (instr >> 21) & 1;
@@ -1303,7 +1396,6 @@ static void loads_and_stores(void) {
         uint32_t size = (instr >> 10) & 3;
         uint32_t rm = (instr >> 16) & 0x1f;
         uint32_t rn = (instr >> 5) & 0x1f;
-        char sz_char = 0;
         unsigned sz = 0;
         unsigned n = 0;
         unsigned i;
@@ -1334,22 +1426,18 @@ static void loads_and_stores(void) {
         }
         if (opcode == 0) {
             /* 8-bit variant */
-            sz_char = 'b';
             sz = 0;
         }
         else if (opcode == 2 && (size & 1) == 0) {
             /* 16-bit variant */
-            sz_char = 'h';
             sz = 1;
         }
         else if (opcode == 4 && size == 0) {
             /* 32-bit variant */
-            sz_char = 's';
             sz = 2;
         }
         else {
             /* 64-bit variant */
-            sz_char = 'd';
             sz = 3;
         }
         add_str(L ? "ld" : "st");
@@ -1358,10 +1446,7 @@ static void loads_and_stores(void) {
         add_str(" { ");
         for (i = 0; i < n; i++) {
             if (i > 0) add_str(", ");
-            add_char('v');
-            add_dec_uint32(instr & 0x1f);
-            add_char('.');
-            add_char(sz_char);
+            add_fp_reg_name((instr & 0x1f) + i, sz);
         }
         add_str(" }[");
         add_dec_uint32(((Q << 3) | (S << 2) | size) >> sz);
@@ -1450,8 +1535,9 @@ static void data_processing_register(void) {
             add_str("cmn");
             no_rd = 1;
         }
-        else if ((instr & 0x600003e0) == 0x400003e0) {
+        else if ((instr & 0x400003e0) == 0x400003e0) {
             add_str("neg");
+            if (instr & (1 << 29)) add_char('s');
             no_rn = 1;
         }
         else {
@@ -1565,8 +1651,8 @@ static void data_processing_register(void) {
             add_reg_name((instr >> 5) & 0x1f, sf, 0);
             add_str(", ");
             add_reg_name((instr >> 16) & 0x1f, sf, 0);
-            add_str(", #");
-            add_dec_uint32(instr & 0xf);
+            add_str(", #0x");
+            add_hex_uint32(instr & 0xf);
             add_str(", ");
             add_str(cond_names[cond]);
         }
@@ -1585,10 +1671,10 @@ static void data_processing_register(void) {
             add_str(op ? "ccmp" : "ccmn");
             add_char(' ');
             add_reg_name((instr >> 5) & 0x1f, sf, 0);
-            add_str(", #");
-            add_dec_uint32((instr >> 16) & 0x1f);
-            add_str(", #");
-            add_dec_uint32(instr & 0xf);
+            add_str(", #0x");
+            add_hex_uint32((instr >> 16) & 0x1f);
+            add_str(", #0x");
+            add_hex_uint32(instr & 0xf);
             add_str(", ");
             add_str(cond_names[cond]);
         }
@@ -1697,6 +1783,7 @@ static void data_processing_register(void) {
                         break;
                     case 2:
                         add_str(o0 ? "" : "smulh");
+                        no_ra = 1;
                         break;
                     case 5:
                         if (!o0 && ra == 0x1f) {
@@ -1840,12 +1927,17 @@ static void fp_to_fixed_point_conversions(void) {
 }
 
 static void fp_conditional_compare(void) {
+    uint32_t M = (instr >> 31) & 1;
+    uint32_t S = (instr >> 29) & 1;
     uint32_t type = (instr >> 22) & 3;
     uint32_t cond = (instr >> 12) & 0xf;
     uint32_t opcode = (instr >> 4) & 1;
     uint32_t Rm = (instr >> 16) & 0x1f;
     uint32_t Rn = (instr >> 5) & 0x1f;
     uint32_t nzcv = instr & 0xf;
+
+    if (M || S) return;
+    if (type >= 2) return;
 
     add_str(opcode ? "fccmpe" : "fccmp");
     add_char(' ');
@@ -1911,6 +2003,147 @@ static void fp_conditional_select(void) {
     add_str(cond_names[cond]);
 }
 
+static void fp_immediate(void) {
+    uint32_t M = (instr >> 31) & 1;
+    uint32_t S = (instr >> 29) & 1;
+    uint32_t type = (instr >> 22) & 3;
+    uint32_t imm8 = (instr >> 13) & 0xff;
+    uint32_t imm5 = (instr >> 5) & 0x1f;
+    uint32_t Rd = instr & 0x1f;
+
+    if (M || S) return;
+    if (type >= 2) return;
+    if (imm5 != 0) return;
+
+    add_str("fmov");
+    add_char(' ');
+    add_char(type & 1 ? 'd' : 's');
+    add_dec_uint32(Rd);
+    add_str(", #");
+    add_vfp_expand_imm(imm8, type & 1);
+}
+
+static void fp_compare(void) {
+    uint32_t M = (instr >> 31) & 1;
+    uint32_t S = (instr >> 29) & 1;
+    uint32_t type = (instr >> 22) & 3;
+    uint32_t opcode = instr  & 0x1f;
+    uint32_t Rn = (instr >> 5) & 0x1f;
+    uint32_t Rm = (instr >> 16) & 0x1f;
+    int zero = 0;
+    char wn = 0;
+
+    switch (type) {
+    case 0: wn = 's'; break;
+    case 1: wn = 'd'; break;
+    default: return;
+    }
+
+    if (M) return;
+    if (S) return;
+
+    zero = (opcode & 0x08) != 0;
+
+    switch (opcode & ~0x08) {
+    case 0x00:
+        add_str("fcmp");
+        break;
+    case 0x10:
+        add_str("fcmpe");
+        break;
+    default:
+        return;
+    }
+
+    add_char(' ');
+    add_char(wn);
+    add_dec_uint32(Rn);
+    add_str(", ");
+    if (zero) {
+        add_str("#0.0");
+    }
+    else {
+        add_char(wn);
+        add_dec_uint32(Rm);
+    }
+}
+
+static void fp_data_processing_1_source(void) {
+    uint32_t M = (instr >> 31) & 1;
+    uint32_t S = (instr >> 29) & 1;
+    uint32_t type = (instr >> 22) & 3;
+    uint32_t opcode = (instr >> 15) & 0x3f;
+    uint32_t Rn = (instr >> 5) & 0x1f;
+    uint32_t Rd = instr & 0x1f;
+    char wd = 0;
+    char wn = 0;
+
+    switch (type) {
+    case 0: wn = wd = 's'; break;
+    case 1: wn = wd = 'd'; break;
+    case 3: wn = wd = 'h'; break;
+    default: return;
+    }
+
+    if (M) return;
+    if (S) return;
+
+    switch (opcode) {
+    case 0x00:
+        add_str("fmov");
+        break;
+    case 0x01:
+        add_str("fabs");
+        break;
+    case 0x02:
+        add_str("fneg");
+        break;
+    case 0x03:
+        add_str("fsqrt");
+        break;
+    case 0x04:
+        add_str("fcvt");
+        wd = 's';
+        break;
+    case 0x05:
+        add_str("fcvt");
+        wd = 'd';
+        break;
+    case 0x07:
+        add_str("fcvt");
+        wd = 'h';
+        break;
+    case 0x08:
+        add_str("frintn");
+        break;
+    case 0x09:
+        add_str("frintp");
+        break;
+    case 0x0a:
+        add_str("frintm");
+        break;
+    case 0x0b:
+        add_str("frintz");
+        break;
+    case 0x0c:
+        add_str("frinta");
+        break;
+    case 0x0e:
+        add_str("frintx");
+        break;
+    case 0x0f:
+        add_str("frinti");
+        break;
+    }
+
+    add_char(' ');
+    add_char(wd);
+    add_dec_uint32(Rd);
+    add_str(", ");
+    add_char(wn);
+    add_dec_uint32(Rn);
+}
+
 static void fp_to_integer_conversions(void) {
     uint32_t sf = (instr >> 31) & 1;
     uint32_t type = (instr >> 22) & 3;
@@ -1940,9 +2173,8 @@ static void fp_to_integer_conversions(void) {
     add_char(' ');
     if (opcode == 2 || opcode == 3 || opcode == 7) {
         if (opcode == 7 && (rmode & 1)) {
-            add_char('v');
-            add_dec_uint32(Rd);
-            add_str(".d[1]");
+            add_fp_reg_name(Rd, 3);
+            add_str("[1]");
         }
         else {
             add_char(type & 1 ? 'd' : 's');
@@ -1955,9 +2187,8 @@ static void fp_to_integer_conversions(void) {
         add_reg_name(Rd, sf, 0);
         add_str(", ");
         if (opcode == 6 && (rmode & 1)) {
-            add_char('v');
-            add_dec_uint32(Rn);
-            add_str(".d[1]");
+            add_fp_reg_name(Rn, 3);
+            add_str("[1]");
         }
         else {
             add_char(type & 1 ? 'd' : 's');
@@ -2093,16 +2324,419 @@ static void AdvSIMD_three_same(void) {
     }
     if (buf_pos == 0) return;
     add_char(' ');
-    if (no_size) add_fp_reg_name_v(instr & 0x1f, Q);
-    else add_fp_reg_name(instr & 0x1f, size, Q);
+    if (no_size) add_fp_reg_name_q(instr & 0x1f, 0, Q);
+    else add_fp_reg_name_q(instr & 0x1f, size, Q);
     add_str(", ");
-    if (no_size) add_fp_reg_name_v(Rn, Q);
-    else add_fp_reg_name(Rn, size, Q);
+    if (no_size) add_fp_reg_name_q(Rn, 0, Q);
+    else add_fp_reg_name_q(Rn, size, Q);
     if (!no_rm) {
         add_str(", ");
-        if (no_size) add_fp_reg_name_v(Rm, Q);
-        else add_fp_reg_name(Rm, size, Q);
+        if (no_size) add_fp_reg_name_q(Rm, 0, Q);
+        else add_fp_reg_name_q(Rm, size, Q);
     }
+}
+
+static void AdvSIMD_two_reg_misc(void) {
+    uint32_t Q = (instr >> 30) & 1;
+    uint32_t U = (instr >> 29) & 1;
+    uint32_t size = (instr >> 22) & 0x3;
+    uint32_t opcode = (instr >> 12) & 0x1f;
+    uint32_t Rn = (instr >> 5) & 0x1f;
+    uint32_t Rd = instr & 0x1f;
+
+    switch (opcode) {
+    case 0x00:
+        add_str(U ? "rev32" : "rev64");
+        break;
+    case 0x01:
+        if (U) break;
+        add_str("rev16");
+        break;
+    case 0x02:
+        add_str(U ? "uaddlp" : "saddlp");
+        break;
+    case 0x03:
+        add_str(U ? "usqadd" : "suqadd");
+        break;
+    case 0x04:
+        add_str(U ? "cmge" : "cls");
+        break;
+    case 0x05:
+        if (U) {
+            if (size == 0) add_str("not");
+            if (size == 1) add_str("rbit");
+            break;
+        }
+        add_str("cnt");
+        break;
+    case 0x06:
+        add_str(U ? "uadalp" : "sadalp");
+        break;
+    case 0x07:
+        add_str(U ? "sqneg" : "sqabs");
+        break;
+    case 0x08:
+        add_str(U ? "cmge" : "cmgt");
+        break;
+    case 0x09:
+        add_str(U ? "cmle" : "cmeq");
+        break;
+    case 0x0a:
+        if (U) break;
+        add_str("cmlt");
+        break;
+    case 0x0b:
+        add_str(U ? "neg" : "abs");
+        break;
+    case 0x0c:
+        if (size < 2) break;
+        add_str(U ? "fcmge" : "fcmgt");
+        break;
+    case 0x0d:
+        if (size < 2) break;
+        add_str(U ? "fcmle" : "fcmeq");
+        break;
+    case 0x0e:
+        if (U) break;
+        if (size < 2) break;
+        add_str("fcmlt");
+        break;
+    case 0x0f:
+        if (size < 2) break;
+        add_str(U ? "fneg" : "fabs");
+        break;
+    case 0x12:
+        add_str(U ? "sqxtun" : "xtn");
+        if (Q) add_char('2');
+        break;
+    case 0x13:
+        if (!U) break;
+        add_str("shll");
+        if (Q) add_char('2');
+        break;
+    case 0x14:
+        add_str(U ? "uqxtn" : "sqxtn");
+        if (Q) add_char('2');
+        break;
+    case 0x16:
+        if (size < 2) {
+            add_str(U ? "fcvtxn" : "fcvtn");
+            if (Q) add_char('2');
+        }
+        break;
+    case 0x17:
+        if (U) break;
+        if (size < 2) {
+            add_str("fcvtl");
+            if (Q) add_char('2');
+        }
+        break;
+    case 0x18:
+        if (size < 2) {
+            add_str(U ? "frinta" : "frintn");
+        }
+        else {
+            if (U) break;
+            add_str("frintp");
+        }
+        break;
+    case 0x19:
+        if (size < 2) {
+            add_str(U ? "frintx" : "frintm");
+        }
+        else {
+            add_str(U ? "frinti" : "frintz");
+        }
+        break;
+    case 0x1a:
+        if (size < 2) {
+            add_str(U ? "fcvtnu" : "fcvtns");
+        }
+        else {
+            add_str(U ? "fcvtpu" : "fcvtps");
+        }
+        break;
+    case 0x1b:
+        if (size < 2) {
+            add_str(U ? "fcvtmu" : "fcvtms");
+        }
+        else {
+            add_str(U ? "fcvtzu" : "fcvtzs");
+        }
+        break;
+    case 0x1c:
+        if (size < 2) {
+            add_str(U ? "fcvtau" : "fcvtas");
+        }
+        else {
+            add_str(U ? "ursqrte" : "urecpe");
+        }
+        break;
+    case 0x1d:
+        if (size < 2) {
+            add_str(U ? "ucvtf" : "scvtf");
+        }
+        else {
+            add_str(U ? "frsqrte" : "frecpe");
+        }
+        break;
+    case 0x1f:
+        if (size < 2) break;
+        if (!U) break;
+        add_str("fsqrt");
+        break;
+    }
+    if (buf_pos == 0) return;
+
+    add_char(' ');
+    add_fp_reg_name_q(Rd, size, Q);
+    add_str(", ");
+    add_fp_reg_name_q(Rn, size, Q);
+
+    if (opcode >= 0x08 && opcode <= 0x0b) add_str(", #0");
+}
+
+static void AdvSIMD_copy(void) {
+    uint32_t Q = (instr >> 30) & 1;
+    uint32_t op = (instr >> 29) & 1;
+    uint32_t imm5 = (instr >> 16) & 0x1f;
+    uint32_t imm4 = (instr >> 11) & 0xf;
+    uint32_t Rn = (instr >> 5) & 0x1f;
+    uint32_t Rd = instr & 0x1f;
+    uint32_t index = 0;
+    uint32_t sz = 0;
+
+    if (imm5 & 1) sz = 0;
+    else if (imm5 & 2) sz = 1;
+    else if (imm5 & 4) sz = 2;
+    else if (imm5 & 8) sz = 3;
+    else return;
+
+    index = imm5 >> (sz + 1);
+
+    if (!op && imm4 == 0) {
+        add_str("dup ");
+        add_fp_reg_name_q(Rd, sz, Q);
+        add_str(", ");
+        add_fp_reg_name(Rn, sz);
+        add_char('[');
+        add_dec_uint32(index);
+        add_char(']');
+    }
+    else if (!op && imm4 == 1) {
+        if (sz == 3 && !Q) return;
+        add_str("dup ");
+        add_fp_reg_name_q(Rd, sz, Q);
+        add_str(", ");
+        add_reg_name(Rn, sz == 3, 0);
+    }
+    else if (!op && imm4 == 5) {
+        if (sz == 3 && !Q) return;
+        add_str("smov ");
+        add_reg_name(Rd, Q, 0);
+        add_str(", ");
+        add_fp_reg_name(Rn, sz);
+        add_char('[');
+        add_dec_uint32(index);
+        add_char(']');
+    }
+    else if (!op && imm4 == 7) {
+        if (sz == 3 && !Q) return;
+        if (sz >= 2 || Q) add_str("mov ");
+        else add_str("umov ");
+        add_reg_name(Rd, Q, 0);
+        add_str(", ");
+        add_fp_reg_name(Rn, sz);
+        add_char('[');
+        add_dec_uint32(index);
+        add_char(']');
+    }
+    else if (Q && !op && imm4 == 3) {
+        add_str("ins ");
+        add_fp_reg_name(Rd, sz);
+        add_char('[');
+        add_dec_uint32(index);
+        add_char(']');
+        add_str(", ");
+        add_reg_name(Rd, sz == 3, 0);
+    }
+    else if (Q && op) {
+        add_str("ins ");
+        add_fp_reg_name(Rd, sz);
+        add_char('[');
+        add_dec_uint32(index);
+        add_char(']');
+        add_str(", ");
+        add_fp_reg_name(Rn, sz);
+        add_char('[');
+        add_dec_uint32(imm4 >> sz);
+        add_char(']');
+    }
+    else {
+        return;
+    }
+}
+
+static void scalar_three_same(void) {
+    uint32_t U = (instr >> 29) & 1;
+    uint32_t size = (instr >> 22) & 3;
+    uint32_t opcode = (instr >> 11) & 0x1f;
+    uint32_t Rm = (instr >> 16) & 0x1f;
+    uint32_t Rn = (instr >> 5) & 0x1f;
+    uint32_t Rd = instr & 0x1f;
+    char w = 0;
+
+    switch (opcode) {
+    case  1: add_str(U ? "uqadd" : "sqadd"); break;
+    case  5: add_str(U ? "uqsub" : "sqsub"); break;
+    case  6: add_str(U ? "cmhi" : "cmgt"); break;
+    case  7: add_str(U ? "cmhs" : "cmge"); break;
+    case  8: add_str(U ? "ushl" : "sshl"); break;
+    case  9: add_str(U ? "uqshl" : "sqshl"); break;
+    case 10: add_str(U ? "urshl" : "srshl"); break;
+    case 11: add_str(U ? "uqrshl" : "sqrshl"); break;
+    case 16: add_str(U ? "sub" : "add"); break;
+    case 17: add_str(U ? "cmeq" : "cmtst"); break;
+    case 22: add_str(U ? "sqrdmulh" : "sqdmulh"); break;
+    case 26:
+        if (size < 2) add_str("");
+        else add_str(U ? "fabd" : "");
+        break;
+    case 27: add_str(U ? "" : "fmulx"); break;
+    case 28:
+        if (size < 2) add_str(U ? "fcmge" : "fcmeq");
+        else add_str(U ? "fcmgt" : "");
+        break;
+    case 29:
+        if (size < 2) add_str(U ? "facge" : "");
+        else add_str(U ? "facgt" : "");
+        break;
+    case 31:
+        if (size < 2) add_str(U ? "" : "frecps");
+        else add_str(U ? "" : "frsqrts");
+        break;
+    default:
+        return;
+    }
+
+    if (buf_pos == 0) return;
+
+    if (opcode >= 26) {
+        switch (size) {
+        case 0: w = 's'; break;
+        case 1: w = 's'; break;
+        case 2: w = 'd'; break;
+        case 3: w = 'd'; break;
+        }
+    }
+    else {
+        switch (size) {
+        case 0: w = 'b'; break;
+        case 1: w = 'h'; break;
+        case 2: w = 's'; break;
+        case 3: w = 'd'; break;
+        }
+    }
+
+    add_char(' ');
+    add_char(w);
+    add_dec_uint32(Rd);
+    add_str(", ");
+    add_char(w);
+    add_dec_uint32(Rn);
+    add_str(", ");
+    add_char(w);
+    add_dec_uint32(Rm);
+}
+
+static void scalar_shift_by_immediate(void) {
+    uint32_t U = (instr >> 29) & 1;
+    uint32_t immh = (instr >> 19) & 0xf;
+    uint32_t immb = (instr >> 16) & 0x7;
+    uint32_t opcode = (instr >> 11) & 0x1f;
+    uint32_t Rd = instr & 0x1f;
+    uint32_t Rn = (instr >> 5) & 0x1f;
+    uint32_t shift = 0;
+    int sh = 0;
+    char w = 0;
+
+    if (immh == 0) return;
+
+    switch (opcode) {
+    case 0:
+        add_str(U ? "ushr" : "sshr");
+        break;
+    case 2:
+        add_str(U ? "usra" : "ssra");
+        break;
+    case 4:
+        add_str(U ? "urshr" : "srshr");
+        break;
+    case 6:
+        add_str(U ? "ursra" : "srsra");
+        break;
+    case 8:
+        add_str(U ? "sri" : "");
+        break;
+    case 10:
+        add_str(U ? "sli" : "shl");
+        sh = 1;
+        break;
+    case 12:
+        add_str(U ? "sqshlu" : "");
+        sh = 1;
+        break;
+    case 14:
+        add_str(U ? "uqshr" : "sqshr");
+        sh = 1;
+        break;
+    case 16:
+        add_str(U ? "sqshrun" : "");
+        break;
+    case 17:
+        add_str(U ? "sqrshrun" : "");
+        break;
+    case 18:
+        add_str(U ? "uqshrn" : "sqshrn");
+        break;
+    case 19:
+        add_str(U ? "uqrshrn" : "sqrshrn");
+        break;
+    case 28:
+        add_str(U ? "ucvtf" : "scvtf");
+        break;
+    case 31:
+        add_str(U ? "fcvtzu" : "fcvtzs");
+        break;
+    }
+
+    if (buf_pos == 0) return;
+
+    if (sh) {
+        if (immh < 2) shift = (immh << 3) + immb - 8u;
+        else if (immh < 4) shift = (immh << 3) + immb - 16u;
+        else if (immh < 8) shift = (immh << 3) + immb - 32u;
+        else shift = (immh << 3) + immb - 64u;
+    }
+    else {
+        if (immh < 2) shift = 16u - ((immh << 3) + immb);
+        else if (immh < 4) shift = 32u - ((immh << 3) + immb);
+        else if (immh < 8) shift = 64u - ((immh << 3) + immb);
+        else shift = 128u - ((immh << 3) + immb);
+    }
+
+    if (immh < 2) w = 'b';
+    else if (immh < 4) w = 'h';
+    else if (immh < 8) w = 's';
+    else w = 'd';
+    add_char(' ');
+    add_char(w);
+    add_dec_uint32(Rd);
+    add_str(", ");
+    add_char(w);
+    add_dec_uint32(Rn);
+    add_str(", #");
+    add_dec_uint32(shift);
 }
 
 static void data_processing_simd_and_fp(void) {
@@ -2128,14 +2762,17 @@ static void data_processing_simd_and_fp(void) {
     }
     if ((instr & 0x5f201c00) == 0x1e201000) {
         /* Floating-point immediate */
+        fp_immediate();
         return;
     }
     if ((instr & 0x5f203c00) == 0x1e202000) {
         /* Floating-point compare */
+        fp_compare();
         return;
     }
     if ((instr & 0x5f207c00) == 0x1e204000) {
         /* Floating-point data-processing (1 source) */
+        fp_data_processing_1_source();
         return;
     }
     if ((instr & 0x5f20fc00) == 0x1e200000) {
@@ -2158,6 +2795,7 @@ static void data_processing_simd_and_fp(void) {
     }
     if ((instr & 0x9f3e0c00) == 0x0e200800) {
         /* AdvSIMD two-reg misc */
+        AdvSIMD_two_reg_misc();
         return;
     }
     if ((instr & 0x9f3e0c00) == 0x0e300800) {
@@ -2166,6 +2804,7 @@ static void data_processing_simd_and_fp(void) {
     }
     if ((instr & 0x9fe08400) == 0x0e000400) {
         /* AdvSIMD copy */
+        AdvSIMD_copy();
         return;
     }
     if ((instr & 0x9f000001) == 0x0f000000) {
@@ -2195,6 +2834,7 @@ static void data_processing_simd_and_fp(void) {
     }
     if ((instr & 0xdf200400) == 0x5e200400) {
         /* AdvSIMD scalar three same */
+        scalar_three_same();
         return;
     }
     if ((instr & 0xdf200c00) == 0x5e200000) {
@@ -2219,6 +2859,7 @@ static void data_processing_simd_and_fp(void) {
     }
     if ((instr & 0xdf800400) == 0x5f000400) {
         /* AdvSIMD scalar shift by immediate */
+        scalar_shift_by_immediate();
         return;
     }
     if ((instr & 0xff3e0c00) == 0x4e280800) {

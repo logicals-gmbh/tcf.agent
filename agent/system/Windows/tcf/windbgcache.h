@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2008, 2015 Wind River Systems, Inc. and others.
+ * Copyright (c) 2008-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -199,6 +199,18 @@ enum SymTagEnum {
     SymTagMax
 };
 
+#if defined(__MINGW32__)
+
+typedef struct _IMAGEHLP_LINE64 {
+    DWORD    SizeOfStruct;
+    PVOID    Key;
+    DWORD    LineNumber;
+    PCHAR    FileName;
+    DWORD64  Address;
+} IMAGEHLP_LINE64, *PIMAGEHLP_LINE64;
+
+#endif
+
 #endif /* defined(__GNUC__) */
 
 enum BasicType {
@@ -238,9 +250,9 @@ enum DataKind {
 #define SymInitializeW LocSymInitializeW
 #define SymGetOptions LocSymGetOptions
 #define SymSetOptions LocSymSetOptions
-#define SymGetLineFromName LocSymGetLineFromName
-#define SymGetLineFromAddr LocSymGetLineFromAddr
-#define SymGetLineNext LocSymGetLineNext
+#define SymGetLineFromName64 LocSymGetLineFromName64
+#define SymGetLineFromAddr64 LocSymGetLineFromAddr64
+#define SymGetLineNext64 LocSymGetLineNext64
 #define SymGetTypeInfo LocSymGetTypeInfo
 #define SymFromIndex LocSymFromIndex
 #define SymFromAddr LocSymFromAddr
@@ -259,9 +271,9 @@ enum DataKind {
 extern BOOL SymInitializeW(HANDLE hProcess, PCWSTR UserSearchPath, BOOL fInvadeProcess);
 extern DWORD SymGetOptions(void);
 extern BOOL SymSetOptions(DWORD Options);
-extern BOOL SymGetLineFromName(HANDLE hProcess, PCSTR ModuleName, PCSTR FileName, DWORD dwLineNumber, PLONG plDisplacement, PIMAGEHLP_LINE Line);
-extern BOOL SymGetLineFromAddr(HANDLE hProcess, DWORD dwAddr, PDWORD pdwDisplacement, PIMAGEHLP_LINE Line);
-extern BOOL SymGetLineNext(HANDLE hProcess, PIMAGEHLP_LINE Line);
+extern BOOL SymGetLineFromName64(HANDLE hProcess, PCSTR ModuleName, PCSTR FileName, DWORD dwLineNumber, PLONG plDisplacement, PIMAGEHLP_LINE64 Line);
+extern BOOL SymGetLineFromAddr64(HANDLE hProcess, DWORD64 dwAddr, PDWORD pdwDisplacement, PIMAGEHLP_LINE64 Line);
+extern BOOL SymGetLineNext64(HANDLE hProcess, PIMAGEHLP_LINE64 Line);
 extern BOOL SymGetTypeInfo(HANDLE hProcess, DWORD64 ModBase, ULONG TypeId, IMAGEHLP_SYMBOL_TYPE_INFO GetType, PVOID pInfo);
 extern BOOL SymFromIndex(HANDLE hProcess, ULONG64 BaseOfDll, DWORD Index, PSYMBOL_INFO Symbol);
 extern BOOL SymFromAddr(HANDLE hProcess, DWORD64 Address, PDWORD64 Displacement, PSYMBOL_INFO Symbol);

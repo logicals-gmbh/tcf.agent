@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -32,9 +32,9 @@
 #include <dirent.h>
 #include <ctype.h>
 #include <asm/unistd.h>
-#include <sys/ptrace.h>
 #include <sys/utsname.h>
 #include <linux/kdev_t.h>
+#include <tcf/framework/mdep-ptrace.h>
 #include <tcf/framework/mdep-fs.h>
 #include <tcf/framework/context.h>
 #include <tcf/framework/events.h>
@@ -59,36 +59,7 @@
 #include <tcf/framework/context-mux.h>
 #endif
 
-#if !defined(PTRACE_SETOPTIONS)
-#define PTRACE_SETOPTIONS       (enum __ptrace_request)0x4200
-#define PTRACE_GETEVENTMSG      (enum __ptrace_request)0x4201
-#define PTRACE_GETSIGINFO       (enum __ptrace_request)0x4202
-#define PTRACE_SETSIGINFO       (enum __ptrace_request)0x4203
-
-#define PTRACE_O_TRACESYSGOOD   0x00000001
-#define PTRACE_O_TRACEFORK      0x00000002
-#define PTRACE_O_TRACEVFORK     0x00000004
-#define PTRACE_O_TRACECLONE     0x00000008
-#define PTRACE_O_TRACEEXEC      0x00000010
-#define PTRACE_O_TRACEVFORKDONE 0x00000020
-#define PTRACE_O_TRACEEXIT      0x00000040
-
-#define PTRACE_EVENT_FORK       1
-#define PTRACE_EVENT_VFORK      2
-#define PTRACE_EVENT_CLONE      3
-#define PTRACE_EVENT_EXEC       4
-#define PTRACE_EVENT_VFORK_DONE 5
-#define PTRACE_EVENT_EXIT       6
-#endif
-
 #define USE_PTRACE_SYSCALL      0
-
-#if defined(__arm__) || defined(__aarch64__)
-#if !defined(PTRACE_GETVFPREGS)
-#define PTRACE_GETVFPREGS       (enum __ptrace_request)27
-#define PTRACE_SETVFPREGS       (enum __ptrace_request)28
-#endif
-#endif
 
 static const int PTRACE_FLAGS =
 #if USE_PTRACE_SYSCALL
@@ -249,7 +220,7 @@ static int context_detach(Context * ctx) {
     assert(ctx->parent == NULL);
     assert(!ctx->exited);
 
-    trace(LOG_CONTEXT, "context: detach ctx %#lx, id %s", ctx, ctx->id);
+    trace(LOG_CONTEXT, "context: detach ctx %#" PRIxPTR ", id %s", (uintptr_t)ctx, ctx->id);
 
     unplant_breakpoints(ctx);
     ctx->exiting = 1;
@@ -290,8 +261,8 @@ static int get_process_state(pid_t pid) {
 
 int context_stop(Context * ctx) {
     ContextExtensionLinux * ext = EXT(ctx);
-    trace(LOG_CONTEXT, "context:%s suspending ctx %#lx id %s",
-        ctx->pending_intercept ? "" : " temporary", ctx, ctx->id);
+    trace(LOG_CONTEXT, "context:%s suspending ctx %#" PRIxPTR ", id %s",
+        ctx->pending_intercept ? "" : " temporary", (uintptr_t)ctx, ctx->id);
     assert(is_dispatch_thread());
     assert(context_has_state(ctx));
     assert(!ctx->exited);
@@ -323,8 +294,8 @@ int context_stop(Context * ctx) {
                 return 0;
             }
             trace(LOG_ALWAYS,
-                "error: tkill(SIGSTOP) failed: ctx %#lx, id %s, error %d %s",
-                ctx, ctx->id, err, errno_to_str(err));
+                "error: tkill(SIGSTOP) failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+                (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
             errno = err;
             return -1;
         }
@@ -430,8 +401,8 @@ static int flush_regs(Context * ctx) {
     {
         RegisterDefinition * def = get_reg_definitions(ctx);
         while (def->name != NULL && (def->offset > i || def->offset + def->size <= i)) def++;
-        trace(LOG_ALWAYS, "error: writing register %s failed: ctx %#lx, id %s, error %d %s",
-            def->name ? def->name : "?", ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: writing register %s failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            def->name ? def->name : "?", (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         if (err == ESRCH) {
             ctx->exiting = 1;
             memset(ext->regs_dirty, 0, sizeof(REG_SET));
@@ -483,21 +454,21 @@ static const char * get_ptrace_cmd_name(int cmd) {
 static int do_single_step(Context * ctx) {
     uint32_t is_cont = 0;
     ContextExtensionLinux * ext = EXT(ctx);
-    enum __ptrace_request cmd = PTRACE_SINGLESTEP;
+    int cmd = PTRACE_SINGLESTEP;
 
     assert(!ext->pending_step);
 
     if (skip_breakpoint(ctx, 1)) return 0;
     if (!ctx->stopped) return 0;
 
-    trace(LOG_CONTEXT, "context: single step ctx %#lx, id %s", ctx, ctx->id);
+    trace(LOG_CONTEXT, "context: single step ctx %#" PRIxPTR ", id %s", (uintptr_t)ctx, ctx->id);
     if (cpu_enable_stepping_mode(ctx, &is_cont) < 0) return -1;
     if (flush_regs(ctx) < 0) return -1;
     if (is_cont) cmd = PTRACE_CONT;
     if (ptrace(cmd, ext->pid, 0, 0) < 0) {
         int err = errno;
-        trace(LOG_ALWAYS, "error: ptrace(%s, ...) failed: ctx %#lx, id %s, error %d %s",
-            get_ptrace_cmd_name(cmd), ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: ptrace(%s, ...) failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            get_ptrace_cmd_name(cmd), (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         if (err == ESRCH) {
             ctx->exiting = 1;
             send_context_started_event(ctx);
@@ -540,9 +511,9 @@ int context_continue(Context * ctx) {
     int signal = 0;
     ContextExtensionLinux * ext = EXT(ctx);
 #if USE_PTRACE_SYSCALL
-    enum __ptrace_request cmd = PTRACE_SYSCALL;
+    int cmd = PTRACE_SYSCALL;
 #else
-    enum __ptrace_request cmd = PTRACE_CONT;
+    int cmd = PTRACE_CONT;
 #endif
 
     assert(is_dispatch_thread());
@@ -571,7 +542,7 @@ int context_continue(Context * ctx) {
         assert(signal != SIGTRAP);
     }
 
-    trace(LOG_CONTEXT, "context: resuming ctx %#lx, id %s, with signal %d", ctx, ctx->id, signal);
+    trace(LOG_CONTEXT, "context: resuming ctx %#" PRIxPTR ", id %s, with signal %d", (uintptr_t)ctx, ctx->id, signal);
 #if defined(__i386__) || defined(__x86_64__)
     if (ext->regs->user.regs.eflags & 0x100) {
         ext->regs->user.regs.eflags &= ~0x100;
@@ -583,8 +554,8 @@ int context_continue(Context * ctx) {
             sigset_is_empty(&ctx->pending_signals)) cmd = PTRACE_DETACH;
     if (ptrace(cmd, ext->pid, 0, signal) < 0) {
         int err = errno;
-        trace(LOG_ALWAYS, "error: ptrace(%s, ...) failed: ctx %#lx, id %s, error %d %s",
-            get_ptrace_cmd_name(cmd), ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: ptrace(%s, ...) failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            get_ptrace_cmd_name(cmd), (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         if (err == ESRCH) {
             ctx->exiting = 1;
             send_context_started_event(ctx);
@@ -692,14 +663,14 @@ int context_write_mem(Context * ctx, ContextAddress address, void * buf, size_t 
     assert(is_dispatch_thread());
     assert(!ctx->exited);
     trace(LOG_CONTEXT,
-        "context: write memory ctx %#lx, id %s, address %#lx, size %zu",
-        ctx, ctx->id, address, size);
+        "context: write memory ctx %#" PRIxPTR ", id %s, address %#" PRIx64 ", size %zu",
+        (uintptr_t)ctx, ctx->id, (uint64_t)address, size);
     mem_err_info.error = 0;
     if (size == 0) return 0;
     if (address + size < address) {
         trace(LOG_CONTEXT,
-            "context: write past the end of memory: ctx %#lx, id %s, addr %#lx, size %ld",
-                    ctx, ctx->id, address, size);
+            "context: write past the end of memory: ctx %#" PRIxPTR ", id %s, addr %#" PRIx64 ", size %u",
+            (uintptr_t)ctx, ctx->id, (uint64_t)address, (unsigned)size);
         errno = EFAULT;
         return -1;
     }
@@ -714,8 +685,8 @@ int context_write_mem(Context * ctx, ContextAddress address, void * buf, size_t 
                 error = errno;
                 if (error != ESRCH || ctx != ctx->mem) {
                     trace(LOG_CONTEXT,
-                        "context: ptrace(PTRACE_PEEKDATA, ...) failed: ctx %#lx, id %s, addr %#lx, error %d %s",
-                        ctx, ctx->id, word_addr, error, errno_to_str(error));
+                        "context: ptrace(PTRACE_PEEKDATA, ...) failed: ctx %#" PRIxPTR ", id %s, addr %#" PRIx64 ", error %d %s",
+                        (uintptr_t)ctx, ctx->id, (uint64_t)word_addr, error, errno_to_str(error));
                 }
                 break;
             }
@@ -732,8 +703,8 @@ int context_write_mem(Context * ctx, ContextAddress address, void * buf, size_t 
             error = errno;
             if (error != ESRCH || ctx != ctx->mem) {
                 trace(LOG_ALWAYS,
-                    "error: ptrace(PTRACE_POKEDATA, ...) failed: ctx %#lx, id %s, addr %#lx, error %d %s",
-                    ctx, ctx->id, word_addr, error, errno_to_str(error));
+                    "error: ptrace(PTRACE_POKEDATA, ...) failed: ctx %#" PRIxPTR ", id %s, addr %#" PRIx64 ", error %d %s",
+                    (uintptr_t)ctx, ctx->id, (uint64_t)word_addr, error, errno_to_str(error));
             }
             break;
         }
@@ -792,14 +763,14 @@ int context_read_mem(Context * ctx, ContextAddress address, void * buf, size_t s
     assert(is_dispatch_thread());
     assert(!ctx->exited);
     trace(LOG_CONTEXT,
-        "context: read memory ctx %#lx, id %s, address %#lx, size %zu",
-        ctx, ctx->id, address, size);
+        "context: read memory ctx %#" PRIxPTR ", id %s, address %#" PRIx64 ", size %zu",
+        (uintptr_t)ctx, ctx->id, (uint64_t)address, size);
     mem_err_info.error = 0;
     if (size == 0) return 0;
     if ((address + size) < address) {
         trace(LOG_CONTEXT,
-            "context: read past the end of memory: ctx %#lx, id %s, addr %#lx, size %ld",
-                    ctx, ctx->id, address, size);
+            "context: read past the end of memory: ctx %#" PRIxPTR ", id %s, addr %#" PRIx64 ", size %u",
+            (uintptr_t)ctx, ctx->id, (uint64_t)address, (unsigned)size);
         errno = EFAULT;
         return -1;
     }
@@ -811,8 +782,8 @@ int context_read_mem(Context * ctx, ContextAddress address, void * buf, size_t s
             error = errno;
             if (error != ESRCH || ctx != ctx->mem) {
                 trace(LOG_CONTEXT,
-                    "context: ptrace(PTRACE_PEEKDATA, ...) failed: ctx %#lx, id %s, addr %#lx, error %d %s",
-                    ctx, ctx->id, word_addr, error, errno_to_str(error));
+                    "context: ptrace(PTRACE_PEEKDATA, ...) failed: ctx %#" PRIxPTR ", id %s, addr %#" PRIx64 ", error %d %s",
+                    (uintptr_t)ctx, ctx->id, (uint64_t)word_addr, error, errno_to_str(error));
             }
             break;
         }
@@ -950,12 +921,12 @@ int context_read_reg(Context * ctx, RegisterDefinition * def, unsigned offs, uns
         }
 #else
         if (i >= offsetof(REG_SET, user.regs) && i < offsetof(REG_SET, user.regs) + sizeof(ext->regs->user.regs)) {
-            if (ptrace(PTRACE_GETREGS, ext->pid, 0, &ext->regs->user.regs) < 0 && errno != ESRCH) {
-                err = errno;
-                break;
+            /* Try to read all registers at once */
+            if (ptrace(PTRACE_GETREGS, ext->pid, 0, &ext->regs->user.regs) == 0) {
+                memset(ext->regs_valid + offsetof(REG_SET, user.regs), 0xff, sizeof(ext->regs->user.regs));
+                continue;
             }
-            memset(ext->regs_valid + offsetof(REG_SET, user.regs), 0xff, sizeof(ext->regs->user.regs));
-            continue;
+            /* Did not work, use PTRACE_PEEKUSER to get one register at a time */
         }
         if (i >= offsetof(REG_SET, fp) && i < offsetof(REG_SET, fp) + sizeof(ext->regs->fp)) {
 #if defined(__arm__) || defined(__aarch64__)
@@ -979,8 +950,8 @@ int context_read_reg(Context * ctx, RegisterDefinition * def, unsigned offs, uns
     }
 
     if (err) {
-        trace(LOG_ALWAYS, "error: reading registers failed: ctx %#lx, id %s, error %d %s",
-            ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: reading registers failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         errno = err;
         return -1;
     }
@@ -1134,6 +1105,10 @@ int context_get_isa(Context * ctx, ContextAddress addr, ContextISA * isa) {
     isa->def = "PPC64";
 #elif defined(__powerpc__)
     isa->def = "PPC";
+#elif defined(__MICROBLAZE__)
+    isa->def = "MicroBlaze";
+#elif defined(__MICROBLAZEX__)
+    isa->def = "MicroBlazeX";
 #else
     isa->def = NULL;
 #endif
@@ -1152,9 +1127,21 @@ int context_get_isa(Context * ctx, ContextAddress addr, ContextISA * isa) {
             isa->max_instruction_size = 4;
             isa->alignment = 4;
         }
-        else if (strcmp(s, "Thumb") == 0) {
+        else if (strcmp(s, "A64") == 0) {
+            isa->max_instruction_size = 4;
+            isa->alignment = 4;
+        }
+        else if (strcmp(s, "Thumb") == 0 || strcmp(s, "ThumbEE") == 0) {
             isa->max_instruction_size = 4;
             isa->alignment = 2;
+        }
+        else if (strcmp(s, "PPC") == 0 || strcmp(s, "PPC64") == 0) {
+            isa->max_instruction_size = 4;
+            isa->alignment = 4;
+        }
+        else if (strcmp(s, "MicroBlaze") == 0 || strcmp(s, "MicroBlazeX") == 0) {
+            isa->max_instruction_size = 4;
+            isa->alignment = 4;
         }
     }
     return 0;
@@ -1235,7 +1222,7 @@ static void event_pid_exited(pid_t pid, int status, int signal) {
          * between PTRACE_CONT (or PTRACE_SYSCALL) and SIGTRAP/PTRACE_EVENT_EXIT. So, ctx->exiting can be 0.
          */
         Context * prs = ctx->parent;
-        trace(LOG_EVENTS, "event: ctx %#lx, pid %d, exit status %d, term signal %d", ctx, pid, status, signal);
+        trace(LOG_EVENTS, "event: ctx %#" PRIxPTR ", pid %d, exit status %d, term signal %d", (uintptr_t)ctx, pid, status, signal);
         assert(EXT(prs)->attach_callback == NULL);
         assert(!prs->exited);
         assert(!ctx->exited);
@@ -1344,7 +1331,7 @@ static Context * add_thread(Context * parent, Context * creator, pid_t pid) {
 #if ENABLE_ProfilerSST
     profiler_sst_add(ctx);
 #endif
-    trace(LOG_EVENTS, "event: new context 0x%x, id %s", ctx, ctx->id);
+    trace(LOG_EVENTS, "event: new context %#" PRIxPTR ", id %s", (uintptr_t)ctx, ctx->id);
     send_context_created_event(ctx);
     return ctx;
 }
@@ -1519,7 +1506,7 @@ static void event_pid_stopped(pid_t pid, int signal, int event, int syscall) {
                     (ctx2->parent = prs)->ref_count++;
                     list_add_last(&ctx2->cldl, &prs->children);
                     link_context(ctx2);
-                    trace(LOG_EVENTS, "event: new context 0x%x, id %s", ctx2, ctx2->id);
+                    trace(LOG_EVENTS, "event: new context %#" PRIxPTR ", id %s", (uintptr_t)ctx2, ctx2->id);
                     send_context_created_event(ctx2);
                     if (state == 't' || state == 'T') {
                         event_pid_stopped(child_pid, SIGSTOP, 0, 0);
@@ -1577,16 +1564,16 @@ static void event_pid_stopped(pid_t pid, int signal, int event, int syscall) {
             ext->syscall_pc = pc1;
             ext->syscall_enter = 1;
             ext->syscall_exit = 0;
-            trace(LOG_EVENTS, "event: pid %d enter sys call %d, PC = %#lx",
-                pid, ext->syscall_id, ext->syscall_pc);
+            trace(LOG_EVENTS, "event: pid %d enter sys call %d, PC = %#" PRIx64,
+                pid, ext->syscall_id, (uint64_t)ext->syscall_pc);
         }
         else {
             if (ext->syscall_pc != pc1) {
-                trace(LOG_ALWAYS, "Invalid PC at sys call exit: pid %d, sys call %d, PC %#lx, expected PC %#lx",
-                    ext->pid, ext->syscall_id, pc1, ext->syscall_pc);
+                trace(LOG_ALWAYS, "Invalid PC at sys call exit: pid %d, sys call %d, PC %#" PRIx64 ", expected PC %#" PRIx64,
+                    ext->pid, ext->syscall_id, (uint64_t)pc1, (uint64_t)ext->syscall_pc);
             }
-            trace(LOG_EVENTS, "event: pid %d exit sys call %d, PC = %#lx",
-                pid, ext->syscall_id, pc1);
+            trace(LOG_EVENTS, "event: pid %d exit sys call %d, PC = %#" PRIx64,
+                pid, ext->syscall_id, (uint64_t)pc1);
             switch (ext->syscall_id) {
 #ifdef __NR_mmap
             case __NR_mmap:
@@ -1611,7 +1598,7 @@ static void event_pid_stopped(pid_t pid, int signal, int event, int syscall) {
             ext->syscall_id = 0;
             ext->syscall_pc = 0;
         }
-        trace(LOG_EVENTS, "event: pid %d stopped at PC = %#lx", pid, pc1);
+        trace(LOG_EVENTS, "event: pid %d stopped at PC = %#" PRIx64, pid, (uint64_t)pc1);
     }
 
     cpu_bp_on_suspend(ctx, &cb_found);

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2012 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -20,6 +20,7 @@
 #include <tcf/config.h>
 #include <assert.h>
 #include <string.h>
+#include <stdarg.h>
 #include <tcf/framework/link.h>
 #include <tcf/framework/trace.h>
 #include <tcf/framework/events.h>
@@ -165,6 +166,33 @@ char * tmp_strdup2(const char * s1, const char * s2) {
     return rval;
 }
 
+char * tmp_printf(const char * fmt, ...) {
+    va_list ap;
+    char arr[0x100];
+    void * mem = NULL;
+    char * buf = arr;
+    size_t len = sizeof(arr);
+    int n;
+
+    while (1) {
+        va_start(ap, fmt);
+        n = vsnprintf(buf, len, fmt, ap);
+        va_end(ap);
+        if (n < 0) {
+            if (len > 0x1000) break;
+            len *= 2;
+        }
+        else {
+            if (n < (int)len) break;
+            len = n + 1;
+        }
+        mem = tmp_realloc(mem, len);
+        buf = (char *)mem;
+    }
+    if (buf == arr) buf = tmp_strdup(arr);
+    return buf;
+}
+
 #if USE_libc_malloc
 
 void * loc_alloc(size_t size) {
@@ -177,7 +205,7 @@ void * loc_alloc(size_t size) {
         perror("malloc");
         exit(1);
     }
-    trace(LOG_ALLOC, "loc_alloc(%u) = %#lx", (unsigned)size, p);
+    trace(LOG_ALLOC, "loc_alloc(%u) = %#" PRIxPTR, (unsigned)size, (uintptr_t)p);
     return p;
 }
 
@@ -190,7 +218,7 @@ void * loc_alloc_zero(size_t size) {
         exit(1);
     }
     memset(p, 0, size);
-    trace(LOG_ALLOC, "loc_alloc_zero(%u) = %#lx", (unsigned)size, p);
+    trace(LOG_ALLOC, "loc_alloc_zero(%u) = %#" PRIxPTR, (unsigned)size, (uintptr_t)p);
     return p;
 }
 
@@ -202,12 +230,12 @@ void * loc_realloc(void * ptr, size_t size) {
         perror("realloc");
         exit(1);
     }
-    trace(LOG_ALLOC, "loc_realloc(%#lx, %u) = %#lx", ptr, (unsigned)size, p);
+    trace(LOG_ALLOC, "loc_realloc(%#" PRIxPTR ", %u) = %#" PRIxPTR, (uintptr_t)ptr, (unsigned)size, (uintptr_t)p);
     return p;
 }
 
 void loc_free(const void * p) {
-    trace(LOG_ALLOC, "loc_free %#lx", p);
+    trace(LOG_ALLOC, "loc_free %#" PRIxPTR, (uintptr_t)p);
     free((void *)p);
 }
 
@@ -236,4 +264,31 @@ char * loc_strndup(const char * s, size_t len) {
     strncpy(rval, s, len);
     rval[len] = '\0';
     return rval;
+}
+
+char * loc_printf(const char * fmt, ...) {
+    va_list ap;
+    char arr[0x100];
+    void * mem = NULL;
+    char * buf = arr;
+    size_t len = sizeof(arr);
+    int n;
+
+    while (1) {
+        va_start(ap, fmt);
+        n = vsnprintf(buf, len, fmt, ap);
+        va_end(ap);
+        if (n < 0) {
+            if (len > 0x1000) break;
+            len *= 2;
+        }
+        else {
+            if (n < (int)len) break;
+            len = n + 1;
+        }
+        mem = loc_realloc(mem, len);
+        buf = (char *)mem;
+    }
+    if (buf == arr) buf = loc_strdup(arr);
+    return buf;
 }

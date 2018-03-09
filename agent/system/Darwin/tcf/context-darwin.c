@@ -29,8 +29,8 @@
 #include <signal.h>
 #include <sched.h>
 #include <sys/syscall.h>
-#include <sys/ptrace.h>
 #include <mach/thread_status.h>
+#include <tcf/framework/mdep-ptrace.h>
 #include <tcf/framework/context.h>
 #include <tcf/framework/events.h>
 #include <tcf/framework/errors.h>
@@ -101,9 +101,9 @@ int context_attach(pid_t pid, ContextAttachCallBack * done, void * data, int mod
 
     assert(done != NULL);
     trace(LOG_CONTEXT, "context: attaching pid %d", pid);
-    if ((mode & CONTEXT_ATTACH_SELF) == 0 && ptrace(PT_ATTACH, pid, 0, 0) < 0) {
+    if ((mode & CONTEXT_ATTACH_SELF) == 0 && ptrace(PT_ATTACHEXC, pid, 0, 0) < 0) {
         int err = errno;
-        trace(LOG_ALWAYS, "error: ptrace(PT_ATTACH) failed: pid %d, error %d %s",
+        trace(LOG_ALWAYS, "error: ptrace(PT_ATTACHEXC) failed: pid %d, error %d %s",
             pid, err, errno_to_str(err));
         errno = err;
         return -1;
@@ -128,8 +128,8 @@ int context_has_state(Context * ctx) {
 }
 
 int context_stop(Context * ctx) {
-    trace(LOG_CONTEXT, "context:%s suspending ctx %#lx, id %s",
-        ctx->pending_intercept ? "" : " temporary", ctx, ctx->id);
+    trace(LOG_CONTEXT, "context:%s suspending ctx %#" PRIxPTR ", id %s",
+        ctx->pending_intercept ? "" : " temporary", (uintptr_t)ctx, ctx->id);
     assert(is_dispatch_thread());
     assert(!ctx->exited);
     assert(!ctx->stopped);
@@ -140,8 +140,8 @@ int context_stop(Context * ctx) {
             ctx->exiting = 1;
             return 0;
         }
-        trace(LOG_ALWAYS, "error: tkill(SIGSTOP) failed: ctx %#lx, id %s, error %d %s",
-            ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: tkill(SIGSTOP) failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         errno = err;
         return -1;
     }
@@ -184,7 +184,8 @@ int context_continue(Context * ctx) {
         assert(signal != SIGTRAP);
     }
 
-    trace(LOG_CONTEXT, "context: resuming ctx %#lx, id %s, with signal %d", ctx, ctx->id, signal);
+    trace(LOG_CONTEXT, "context: resuming ctx %#" PRIxPTR ", id %s, with signal %d",
+        (uintptr_t)ctx, ctx->id, signal);
 #if defined(__i386__)
     if (EXT(ctx)->regs->__eflags & 0x100) {
         EXT(ctx)->regs->__eflags &= ~0x100;
@@ -200,8 +201,8 @@ int context_continue(Context * ctx) {
         unsigned int state_count;
         if (thread_set_state(EXT(ctx)->pid, x86_THREAD_STATE32, EXT(ctx)->regs, &state_count) != KERN_SUCCESS) {
             int err = errno;
-            trace(LOG_ALWAYS, "error: thread_set_state failed: ctx %#lx, id %s, error %d %s",
-                ctx, ctx->id, err, errno_to_str(err));
+            trace(LOG_ALWAYS, "error: thread_set_state failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+                (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
             errno = err;
             return -1;
         }
@@ -213,8 +214,8 @@ int context_continue(Context * ctx) {
             send_context_started_event(ctx);
             return 0;
         }
-        trace(LOG_ALWAYS, "error: ptrace(PT_CONTINUE, ...) failed: ctx %#lx, id %s, error %d %s",
-            ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: ptrace(PT_CONTINUE, ...) failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         errno = err;
         return -1;
     }
@@ -238,13 +239,13 @@ int context_single_step(Context * ctx) {
     if (skip_breakpoint(ctx, 1)) return 0;
 
     if (syscall_never_returns(ctx)) return context_continue(ctx);
-    trace(LOG_CONTEXT, "context: single step ctx %#lx, id %S", ctx, ctx->id);
+    trace(LOG_CONTEXT, "context: single step ctx %#" PRIxPTR ", id %s", (uintptr_t)ctx, ctx->id);
     if (EXT(ctx)->regs_dirty) {
         unsigned int state_count;
         if (thread_set_state(EXT(ctx)->pid, x86_THREAD_STATE32, EXT(ctx)->regs, &state_count) != KERN_SUCCESS) {
             int err = errno;
-            trace(LOG_ALWAYS, "error: thread_set_state failed: ctx %#lx, id %s, error %d %s",
-                ctx, ctx->id, err, errno_to_str(err));
+            trace(LOG_ALWAYS, "error: thread_set_state failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+                (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
             errno = err;
             return -1;
         }
@@ -257,8 +258,8 @@ int context_single_step(Context * ctx) {
             send_context_started_event(ctx);
             return 0;
         }
-        trace(LOG_ALWAYS, "error: ptrace(PT_STEP, ...) failed: ctx %#lx, id %s, error %d %s",
-            ctx, ctx->id, err, errno_to_str(err));
+        trace(LOG_ALWAYS, "error: ptrace(PT_STEP, ...) failed: ctx %#" PRIxPTR ", id %s, error %d %s",
+            (uintptr_t)ctx, ctx->id, err, errno_to_str(err));
         errno = err;
         return -1;
     }
@@ -525,11 +526,12 @@ static void event_pid_exited(pid_t pid, int status, int signal) {
         if (EXT(ctx->parent)->pid == pid) ctx = ctx->parent;
         assert(EXT(ctx)->attach_callback == NULL);
         if (ctx->exited) {
-            trace(LOG_EVENTS, "event: ctx %#lx, pid %d, exit status %d unexpected, stopped %d, exited %d",
-                ctx, pid, status, ctx->stopped, ctx->exited);
+            trace(LOG_EVENTS, "event: ctx %#" PRIxPTR ", pid %d, exit status %d unexpected, stopped %d, exited %d",
+                (uintptr_t)ctx, pid, status, ctx->stopped, ctx->exited);
         }
         else {
-            trace(LOG_EVENTS, "event: ctx %#lx, pid %d, exit status %d, term signal %d", ctx, pid, status, signal);
+            trace(LOG_EVENTS, "event: ctx %#" PRIxPTR ", pid %d, exit status %d, term signal %d",
+                (uintptr_t)ctx, pid, status, signal);
             ctx->exiting = 1;
             if (ctx->stopped) send_context_started_event(ctx);
             if (!list_is_empty(&ctx->children)) {
@@ -560,9 +562,7 @@ static void event_pid_exited(pid_t pid, int status, int signal) {
 
 static void event_pid_stopped(pid_t pid, int signal, int event, int syscall) {
     int stopped_by_exception = 0;
-    unsigned long msg = 0;
     Context * ctx = NULL;
-    Context * ctx2 = NULL;
 
     trace(LOG_EVENTS, "event: pid %d stopped, signal %d", pid, signal);
 
@@ -611,7 +611,6 @@ static void event_pid_stopped(pid_t pid, int signal, int event, int syscall) {
         send_context_changed_event(ctx);
     }
     else {
-        thread_state_t state;
         unsigned int state_count;
         ContextAddress pc0 = 0;
         ContextAddress pc1 = 0;

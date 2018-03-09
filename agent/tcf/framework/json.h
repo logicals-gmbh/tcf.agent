@@ -26,7 +26,6 @@
 #define D_json
 
 #include <tcf/config.h>
-#include <stdlib.h>
 #include <tcf/framework/streams.h>
 
 /* Marker of end of command argument */
@@ -43,7 +42,7 @@ extern char * json_read_alloc_string(InputStream * inp);
 extern char ** json_read_alloc_string_array(InputStream * inp, int * len);
 
 typedef void JsonArrayCallBack(InputStream *, void *);
-/* Read JSON array. Call "call_back" for each array element. Return 0 if array if null, return 1 if not null */
+/* Read JSON array. Call "call_back" for each array element. Return 0 if array is null, return 1 if not null */
 extern int json_read_array(InputStream * inp, JsonArrayCallBack * call_back, void * arg);
 
 typedef void JsonStructCallBack(InputStream *, const char *, void *);

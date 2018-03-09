@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -25,7 +25,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <tcf/framework/mdep-fs.h>
-#include <tcf/framework/protocol.h>
 #include <tcf/framework/exceptions.h>
 #include <tcf/framework/myalloc.h>
 #include <tcf/framework/json.h>
@@ -56,30 +55,10 @@ static const char SYS_MON[] = "SysMonitor";
 
 typedef struct kinfo_proc kinfo_proc;
 
-static void write_string_array(OutputStream * out, char **ap, int len) {
-    int cnt;
-
-    write_stream(out, '[');
-    for (cnt = 0; cnt < len; cnt++) {
-        if (cnt > 0) write_stream(out, ',');
-        json_write_string(out, ap[cnt]);
-    }
-    write_stream(out, ']');
-}
-
-static void free_array(char **ap, int len) {
-    int c;
-    for (c = 0; c < len; c++) {
-        free(*ap++);
-    }
-    free(ap);
-}
-
 /*
  * Get kernel process information for all processes.
  */
-static int get_allprocesses(kinfo_proc **kprocs, int *nprocs)
-{
+static int get_allprocesses(kinfo_proc **kprocs, int *nprocs) {
     size_t          len;
     kinfo_proc *    kp;
     int             mib_name[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
@@ -104,8 +83,7 @@ static int get_allprocesses(kinfo_proc **kprocs, int *nprocs)
 /*
  * Get kernel process information for a specified pid.
  */
-static kinfo_proc *get_process(pid_t pid)
-{
+static kinfo_proc *get_process(pid_t pid) {
     kinfo_proc *        kp;
     int                 mib_name[] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, 0};
     int                 mib_len = 4;
@@ -270,7 +248,6 @@ static void command_get_context(char * token, Channel * c) {
 }
 
 static void command_get_children(char * token, Channel * c) {
-    int     err = 0;
     char    id[256];
     pid_t   pid = 0;
     pid_t   parent = 0;
@@ -360,7 +337,7 @@ static void command_get_children(char * token, Channel * c) {
 }
 
 static void command_get_command_line(char * token, Channel * c) {
-    int             err;
+    int             err = 0;
     char            id[256];
     pid_t           pid;
     pid_t           parent;
@@ -1577,7 +1554,8 @@ static void command_get_context(char * token, Channel * c) {
 
     if (err == 0 && pid != 0) {
         char bf[256];
-        write_context(&c->out, id, parent == 0 ? NULL : strcpy(bf, pid2id(parent, 0)), dir);
+        if (parent != 0) strlcpy(bf, pid2id(parent, 0), sizeof(bf));
+        write_context(&c->out, id, parent == 0 ? NULL : bf, dir);
         write_stream(&c->out, 0);
     }
     else {

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -16,10 +16,6 @@
 /*
  * Symbols service - ELF version.
  */
-
-#if defined(__GNUC__) && !defined(_GNU_SOURCE)
-#  define _GNU_SOURCE
-#endif
 
 #include <tcf/config.h>
 
@@ -1182,6 +1178,7 @@ static int same_namespace(ObjectInfo * x, ObjectInfo * y) {
 static ObjectInfo * find_definition(ObjectInfo * decl) {
     while (decl != NULL) {
         int search_pub_names = 0;
+        int search_ext_only = 0;
         if (decl->mDefinition != NULL) {
             decl = decl->mDefinition;
             continue;
@@ -1197,6 +1194,7 @@ static ObjectInfo * find_definition(ObjectInfo * decl) {
             break;
         default:
             search_pub_names = (decl->mFlags & DOIF_external) != 0;
+            search_ext_only = 1;
             break;
         }
         if (search_pub_names) {
@@ -1212,6 +1210,7 @@ static ObjectInfo * find_definition(ObjectInfo * decl) {
                     if (obj->mTag != decl->mTag) continue;
                     if (obj->mFlags & DOIF_declaration) continue;
                     if (obj->mFlags & DOIF_specification) continue;
+                    if (search_ext_only && (obj->mFlags & DOIF_external) == 0) continue;
                     if (!equ_symbol_names(obj->mName, decl->mName)) continue;
                     if (!cmp_object_profiles(decl, obj)) continue;
                     if (!cmp_object_linkage_names(decl, obj)) continue;
@@ -4295,8 +4294,10 @@ int get_symbol_flags(const Symbol * sym, SYM_FLAGS * flags) {
 }
 
 int get_symbol_props(const Symbol * sym, SymbolProperties * props) {
-#define STO_PPC64_LOCAL_BIT 5
-#define STO_PPC64_LOCAL_MASK    (7 << STO_PPC64_LOCAL_BIT)
+#ifndef STO_PPC64_LOCAL_MASK
+#  define STO_PPC64_LOCAL_BIT 5
+#  define STO_PPC64_LOCAL_MASK    (7 << STO_PPC64_LOCAL_BIT)
+#endif
 #define IS_PPC64_V2(elfsym) ((elfsym->file->machine == EM_PPC64) && (elfsym->file->flags & 0x3) == 2)
 
     ELF_SymbolInfo elf_sym_info;

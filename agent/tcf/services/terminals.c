@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2008, 2014 Wind River Systems, Inc. and others.
+ * Copyright (c) 2008-2018 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -31,7 +31,6 @@
 #include <assert.h>
 #include <tcf/framework/mdep-fs.h>
 #include <tcf/framework/myalloc.h>
-#include <tcf/framework/protocol.h>
 #include <tcf/framework/trace.h>
 #include <tcf/framework/context.h>
 #include <tcf/framework/json.h>
@@ -44,7 +43,7 @@
 #include <tcf/services/terminals.h>
 
 #ifndef TERMINALS_NO_LOGIN
-#define TERMINALS_NO_LOGIN 1
+#  define TERMINALS_NO_LOGIN 1
 #endif
 
 static const char * TERMINALS = "Terminals";
@@ -55,15 +54,19 @@ static const char * TERMINALS = "Terminals";
 #else
 #  include <sys/stat.h>
 #  include <unistd.h>
-# if TERMINALS_NO_LOGIN
-#  define TERM_LAUNCH_EXEC "/bin/bash"
-#  define TERM_LAUNCH_ARGS {TERM_LAUNCH_EXEC, "-l", NULL}
-#  define TERM_EXIT_SIGNAL SIGHUP
-# else
-#  define TERM_LAUNCH_EXEC "/bin/login"
-#  define TERM_LAUNCH_ARGS {TERM_LAUNCH_EXEC, "-p", NULL}
-#  define TERM_EXIT_SIGNAL SIGTERM
-# endif
+#  if TERMINALS_NO_LOGIN
+#    if defined(ANDROID)
+#      define TERM_LAUNCH_EXEC "/system/bin/sh"
+#    else
+#      define TERM_LAUNCH_EXEC "/bin/bash"
+#    endif
+#    define TERM_LAUNCH_ARGS {TERM_LAUNCH_EXEC, "-l", NULL}
+#    define TERM_EXIT_SIGNAL SIGHUP
+#  else
+#    define TERM_LAUNCH_EXEC "/bin/login"
+#    define TERM_LAUNCH_ARGS {TERM_LAUNCH_EXEC, "-p", NULL}
+#    define TERM_EXIT_SIGNAL SIGTERM
+#  endif
 #endif
 
 #define TERM_PROP_DEF_SIZE 256
@@ -286,6 +289,7 @@ static void terminal_exited(void * args) {
     }
 
     list_remove(&term->link);
+    broadcast_group_unlock(term->bcg);
     channel_unlock_with_msg(term->channel, TERMINALS);
     loc_free(term);
 }
@@ -462,6 +466,7 @@ static void command_launch(char * token, Channel * c) {
 
     if (!err) {
         term->bcg = c->bcg;
+        broadcast_group_lock(c->bcg);
         channel_lock_with_msg(term->channel = c, TERMINALS);
         strlcpy(term->pty_type, pty_type, sizeof(term->pty_type));
         strlcpy(term->encoding, encoding, sizeof(term->encoding));

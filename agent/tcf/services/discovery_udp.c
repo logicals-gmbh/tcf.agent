@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2016 Wind River Systems, Inc. and others.
+ * Copyright (c) 2007, 2017 Wind River Systems, Inc. and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
@@ -63,7 +63,7 @@ static ip_ifc_info ifc_list[MAX_IFC];
 static time_t last_req_slaves_time[MAX_IFC];
 static int send_all_ok[MAX_IFC];
 
-static int udp_server_port = 0;
+static uint16_t udp_server_port = 0;
 static int udp_server_socket = -1;
 static int udp_server_generation = 0;
 
@@ -273,7 +273,7 @@ static int create_server_socket(void) {
     udp_server_socket = sock;
     udp_server_generation++;
     loc_freeaddrinfo(reslist);
-    trace(LOG_DISCOVERY, "UDP discovery server created at port %d", udp_server_port);
+    trace(LOG_DISCOVERY, "UDP discovery server created at port %d", (int)udp_server_port);
     trigger_recv();
     return 0;
 }
@@ -484,9 +484,9 @@ static void udp_send_ack_slaves_one(SlaveInfo * s) {
         app_strz(str);
 
         while (n < slave_cnt) {
-            SlaveInfo * s = slave_info + n++;
-            if (s->last_req_slaves_time + PEER_DATA_RETENTION_PERIOD < timenow) continue;
-            send_packet(ifc, &s->addr);
+            SlaveInfo * sn = slave_info + n++;
+            if (sn->last_req_slaves_time + PEER_DATA_RETENTION_PERIOD < timenow) continue;
+            send_packet(ifc, &sn->addr);
         }
     }
 }
@@ -642,7 +642,7 @@ static void udp_refresh_timer(void * arg) {
             struct sockaddr_in addr;
             memset(&addr, 0, sizeof(addr));
             addr.sin_family = AF_INET;
-            addr.sin_port = htons((short)udp_server_port);
+            addr.sin_port = htons(udp_server_port);
             addr.sin_addr.s_addr = ifc_list[i].addr;
             add_slave(&addr, timenow);
         }
@@ -857,7 +857,7 @@ static void udp_server_recv(void * x) {
 }
 
 static void local_peer_changed(PeerServer * ps, int type, void * arg) {
-    trace(LOG_DISCOVERY, "Peer changed: ps=0x%x, type=%d", ps, type);
+    trace(LOG_DISCOVERY, "Peer changed: ps=%#" PRIxPTR ", type=%d", (uintptr_t)ps, type);
     switch (type) {
     case PS_EVENT_ADDED:
     case PS_EVENT_CHANGED:
