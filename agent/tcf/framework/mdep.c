@@ -257,42 +257,6 @@ int wsa_closesocket(int socket) {
     return 0;
 }
 
-/* inet_ntop()/inet_pton() are not available in MinGW */
-/* inet_ntop()/inet_pton() are not available in Windows before Windows Vista */
-#if defined(__MINGW32__) || (defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0600)
-const char * inet_ntop(int af, const void * src, char * dst, socklen_t size) {
-    char * str = NULL;
-    if (af != AF_INET) {
-#ifdef EAFNOSUPPORT
-        errno = EAFNOSUPPORT;
-#else
-        errno = EINVAL;
-#endif
-        return NULL;
-    }
-    str = inet_ntoa(*(struct in_addr *)src);
-    if ((socklen_t)strlen(str) >= size) {
-        errno = ENOSPC;
-        return NULL;
-    }
-    return strcpy(dst, str);
-}
-
-int inet_pton(int af, const char * src, void * dst) {
-    if (af != AF_INET) {
-#ifdef EAFNOSUPPORT
-        errno = EAFNOSUPPORT;
-#else
-        errno = EINVAL;
-#endif
-        return -1;
-    }
-    if (src == NULL || *src == 0) return 0;
-    if ((((struct in_addr *)dst)->s_addr = inet_addr(src)) == INADDR_NONE) return 0;
-    return 1;
-}
-#endif
-
 #endif /* defined(_WIN32) || defined(__CYGWIN__)*/
 
 #if defined(_WIN32) && !defined(__CYGWIN__)

@@ -43,13 +43,6 @@ extern const char * loc_gai_strerror(int ecode);
 
 #define MSG_MORE 0
 
-/* inet_ntop()/inet_pton() are not available in MinGW */
-/* inet_ntop()/inet_pton() are not available in Windows before Windows Vista */
-#if defined(__MINGW32__) || (defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0600)
-extern const char * inet_ntop(int af, const void * src, char * dst, socklen_t size);
-extern int inet_pton(int af, const char * src, void * dst);
-#endif
-
 /*
  * Windows socket functions don't set errno as expected.
  * Wrappers are provided to workaround the problem.

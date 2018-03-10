@@ -199,18 +199,6 @@ enum SymTagEnum {
     SymTagMax
 };
 
-#if defined(__MINGW32__)
-
-typedef struct _IMAGEHLP_LINE64 {
-    DWORD    SizeOfStruct;
-    PVOID    Key;
-    DWORD    LineNumber;
-    PCHAR    FileName;
-    DWORD64  Address;
-} IMAGEHLP_LINE64, *PIMAGEHLP_LINE64;
-
-#endif
-
 #endif /* defined(__GNUC__) */
 
 enum BasicType {
