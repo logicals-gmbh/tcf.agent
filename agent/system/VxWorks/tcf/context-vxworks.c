@@ -160,7 +160,7 @@ static void event_attach_done(void * x) {
         (ctx->parent = parent_ctx)->ref_count++;
         list_add_last(&ctx->cldl, &parent_ctx->children);
         link_context(ctx);
-        trace(LOG_CONTEXT, "context: attached: ctx %#lx, id %#x", ctx, EXT(ctx)->pid);
+        trace(LOG_CONTEXT, "context: attached: ctx %p, id %#x", ctx, EXT(ctx)->pid);
         send_context_created_event(ctx);
         args->done(0, ctx, args->data);
         if (taskIsStopped(args->pid)) {
@@ -204,10 +204,10 @@ int context_stop(Context * ctx) {
     assert(!ctx->exited);
     assert(!ext->regs_dirty);
     if (ctx->pending_intercept) {
-        trace(LOG_CONTEXT, "context: stop ctx %#lx, id %#x", ctx, ext->pid);
+        trace(LOG_CONTEXT, "context: stop ctx %p, id %#x", ctx, ext->pid);
     }
     else {
-        trace(LOG_CONTEXT, "context: temporary stop ctx %#lx, id %#x", ctx, ext->pid);
+        trace(LOG_CONTEXT, "context: temporary stop ctx %p, id %#x", ctx, ext->pid);
     }
 
     TASKLOCK();
@@ -218,7 +218,7 @@ int context_stop(Context * ctx) {
         n = events_cnt;
         SPIN_LOCK_ISR_GIVE(&events_lock);
         if (n > 0) {
-            trace(LOG_CONTEXT, "context: already stopped ctx %#lx, id %#x", ctx, ext->pid);
+            trace(LOG_CONTEXT, "context: already stopped ctx %p, id %#x", ctx, ext->pid);
             TASKUNLOCK();
             return 0;
         }
@@ -234,7 +234,7 @@ int context_stop(Context * ctx) {
             int error = errno;
             TASKUNLOCK();
             if (error == S_vxdbgLib_INVALID_CTX) return 0;
-            trace(LOG_ALWAYS, "context: can't stop ctx %#lx, id %#x: %s",
+            trace(LOG_ALWAYS, "context: can't stop ctx %p, id %#x: %s",
                     ctx, ext->pid, errno_to_str(error));
             return -1;
         }
@@ -257,12 +257,12 @@ static int kill_context(Context * ctx) {
 
     if (taskDelete(ext->pid) != OK) {
         int error = errno;
-        trace(LOG_ALWAYS, "context: can't kill ctx %#lx, id %#x: %s",
+        trace(LOG_ALWAYS, "context: can't kill ctx %p, id %#x: %s",
                 ctx, ext->pid, errno_to_str(error));
         return -1;
     }
     send_context_started_event(ctx);
-    trace(LOG_CONTEXT, "context: killed ctx %#lx, id %#x", ctx, ext->pid);
+    trace(LOG_CONTEXT, "context: killed ctx %p, id %#x", ctx, ext->pid);
     release_error_report(ext->regs_error);
     loc_free(ext->regs);
     ext->regs_error = NULL;
@@ -282,12 +282,12 @@ int context_continue(Context * ctx) {
     assert(!ctx->exited);
     assert(taskIsStopped(ext->pid));
 
-    trace(LOG_CONTEXT, "context: continue ctx %#lx, id %#x", ctx, ext->pid);
+    trace(LOG_CONTEXT, "context: continue ctx %p, id %#x", ctx, ext->pid);
 
     if (ext->regs_dirty) {
         if (taskRegsSet(ext->pid, ext->regs) != OK) {
             int error = errno;
-            trace(LOG_ALWAYS, "context: can't set regs ctx %#lx, id %#x: %s",
+            trace(LOG_ALWAYS, "context: can't set regs ctx %p, id %#x: %s",
                     ctx, ext->pid, errno_to_str(error));
             return -1;
         }
@@ -300,7 +300,7 @@ int context_continue(Context * ctx) {
     if (vxdbgCont(vxdbg_clnt_id, &vxdbg_ctx) != OK) {
         int error = errno;
         TASKUNLOCK();
-        trace(LOG_ALWAYS, "context: can't continue ctx %#lx, id %#x: %s",
+        trace(LOG_ALWAYS, "context: can't continue ctx %p, id %#x: %s",
                 ctx, ext->pid, errno_to_str(error));
         return -1;
     }
@@ -321,12 +321,12 @@ int context_single_step(Context * ctx) {
     assert(!ctx->exited);
     assert(taskIsStopped(ext->pid));
 
-    trace(LOG_CONTEXT, "context: single step ctx %#lx, id %#x", ctx, ext->pid);
+    trace(LOG_CONTEXT, "context: single step ctx %p, id %#x", ctx, ext->pid);
 
     if (ext->regs_dirty) {
         if (taskRegsSet(ext->pid, ext->regs) != OK) {
             int error = errno;
-            trace(LOG_ALWAYS, "context: can't set regs ctx %#lx, id %#x: %s",
+            trace(LOG_ALWAYS, "context: can't set regs ctx %p, id %#x: %s",
                     ctx, ext->pid, errno_to_str(error));
             return -1;
         }
@@ -339,7 +339,7 @@ int context_single_step(Context * ctx) {
     if (vxdbgStep(vxdbg_clnt_id, &vxdbg_ctx, NULL, NULL) != OK) {
         int error = errno;
         TASKUNLOCK();
-        trace(LOG_ALWAYS, "context: can't step ctx %#lx, id %#x: %d",
+        trace(LOG_ALWAYS, "context: can't step ctx %p, id %#x: %d",
                 ctx, ext->pid, errno_to_str(error));
         return -1;
     }
@@ -358,7 +358,7 @@ static int context_terminate(Context * ctx) {
     assert(!ctx->exited);
     assert(taskIsStopped(ext->pid));
 
-    trace(LOG_CONTEXT, "context: terminate ctx %#lx, id %#x", ctx, ext->pid);
+    trace(LOG_CONTEXT, "context: terminate ctx %p, id %#x", ctx, ext->pid);
 
     if (ext->regs_dirty) {
         taskRegsSet(ext->pid, ext->regs);
@@ -630,7 +630,7 @@ static void event_handler(void * arg) {
         EXT(stopped_ctx)->bp_info = info->bp_info;
         if (current_ctx != NULL) EXT(stopped_ctx)->bp_pid = EXT(current_ctx)->pid;
         assert(taskIsStopped(EXT(stopped_ctx)->pid));
-        trace(LOG_CONTEXT, "context: stopped by breakpoint: ctx %#lx, id %#x",
+        trace(LOG_CONTEXT, "context: stopped by breakpoint: ctx %p, id %#x",
                 stopped_ctx, EXT(stopped_ctx)->pid);
         send_context_stopped_event(stopped_ctx);
         break;
@@ -649,7 +649,7 @@ static void event_handler(void * arg) {
         current_ctx->stopped_by_bp = 0;
         current_ctx->stopped_by_exception = 0;
         assert(taskIsStopped(EXT(current_ctx)->pid));
-        trace(LOG_CONTEXT, "context: stopped by end of step: ctx %#lx, id %#x",
+        trace(LOG_CONTEXT, "context: stopped by end of step: ctx %p, id %#x",
                 current_ctx, EXT(current_ctx)->pid);
         send_context_stopped_event(current_ctx);
         break;
@@ -671,7 +671,7 @@ static void event_handler(void * arg) {
         stopped_ctx->stopped_by_bp = 0;
         stopped_ctx->stopped_by_exception = 0;
         assert(taskIsStopped(EXT(stopped_ctx)->pid));
-        trace(LOG_CONTEXT, "context: stopped by sofware request: ctx %#lx, id %#x",
+        trace(LOG_CONTEXT, "context: stopped by sofware request: ctx %p, id %#x",
                 stopped_ctx, EXT(stopped_ctx)->pid);
         send_context_stopped_event(stopped_ctx);
         break;
@@ -688,7 +688,7 @@ static void event_handler(void * arg) {
         assert(stopped_ctx->mem == stopped_ctx->parent->mem);
         list_add_last(&stopped_ctx->cldl, &stopped_ctx->parent->children);
         link_context(stopped_ctx);
-        trace(LOG_CONTEXT, "context: created: ctx %#lx, id %#x",
+        trace(LOG_CONTEXT, "context: created: ctx %p, id %#x",
                 stopped_ctx, EXT(stopped_ctx)->pid);
         send_context_created_event(stopped_ctx);
         break;
@@ -770,7 +770,7 @@ static void waitpid_listener(int pid, int exited, int exit_code, int signal, int
              */
             assert(!stopped_ctx->stopped);
             assert(!stopped_ctx->exited);
-            trace(LOG_CONTEXT, "context: exited ctx %#lx, id %#x", stopped_ctx, EXT(stopped_ctx)->pid);
+            trace(LOG_CONTEXT, "context: exited ctx %p, id %#x", stopped_ctx, EXT(stopped_ctx)->pid);
             release_error_report(EXT(stopped_ctx)->regs_error);
             loc_free(EXT(stopped_ctx)->regs);
             EXT(stopped_ctx)->regs_error = NULL;
