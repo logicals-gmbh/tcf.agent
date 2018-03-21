@@ -325,10 +325,18 @@ int pthread_cond_wait(pthread_cond_t * cond, pthread_mutex_t * mutex) {
     p->waiters_count++;
     LeaveCriticalSection(&p->waiters_count_lock);
 
+#if TARGET_RTOS32
+    int lock_res = pthread_mutex_unlock(mutex);
+    if (lock_res)
+        return lock_res;
+
+    res = WaitForSingleObject(p->sema, INFINITE);
+#else
     /* This call atomically releases the mutex and waits on the */
     /* semaphore until <pthread_cond_signal> or <pthread_cond_broadcast> */
     /* are called by another thread. */
     res = SignalObjectAndWait(*mutex, p->sema, INFINITE, FALSE);
+#endif
     if (res == WAIT_FAILED) return set_win32_errno(GetLastError());
 
     /* Re-acquire lock to avoid race conditions. */
@@ -378,10 +386,18 @@ int pthread_cond_timedwait(pthread_cond_t * cond, pthread_mutex_t * mutex, const
     p->waiters_count++;
     LeaveCriticalSection(&p->waiters_count_lock);
 
+#if TARGET_RTOS32
+    int lock_res = pthread_mutex_unlock(mutex);
+    if (lock_res)
+        return lock_res;
+
+    res = WaitForSingleObject(p->sema, timeout);
+#else
     /* This call atomically releases the mutex and waits on the */
     /* semaphore until <pthread_cond_signal> or <pthread_cond_broadcast> */
     /* are called by another thread. */
     res = SignalObjectAndWait(*mutex, p->sema, timeout, FALSE);
+#endif
     if (res == WAIT_FAILED) return set_win32_errno(GetLastError());
 
     /* Re-acquire lock to avoid race conditions. */
@@ -511,6 +527,9 @@ int pthread_create(pthread_t * res, const pthread_attr_t * attr,
 }
 
 int pthread_join(pthread_t thread_id, void ** value_ptr) {
+#if TARGET_RTOS32
+    return 0;
+#else
     int error = 0;
     HANDLE thread = OpenThread(SYNCHRONIZE | THREAD_QUERY_INFORMATION, FALSE, (DWORD)(uintptr_t)thread_id);
 
@@ -519,6 +538,7 @@ int pthread_join(pthread_t thread_id, void ** value_ptr) {
     if (!error && value_ptr != NULL && !GetExitCodeThread(thread, (LPDWORD)value_ptr)) error = set_win32_errno(GetLastError());
     if (!CloseHandle(thread) && !error) error = set_win32_errno(GetLastError());
     return error;
+#endif
 }
 
 int pthread_detach(pthread_t thread_id) {

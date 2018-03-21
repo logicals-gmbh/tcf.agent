@@ -561,7 +561,7 @@ void channel_pipe_connect(PeerServer * ps, ChannelConnectCallBack callback, void
     post_event(channel_pipe_connect_done, info);
 }
 
-#if defined(_WIN32) && !defined(__CYGWIN__)
+#if defined(_WIN32) && !defined(__CYGWIN__) && !TARGET_RTOS32
 
 #define check_error_win32(ok) { if (!(ok)) check_error(set_win32_errno(GetLastError())); }
 
@@ -729,7 +729,7 @@ static void server_close(ChannelServer * serv) {
 
 ChannelServer * channel_pipe_server(PeerServer * ps) {
     ServerPIPE * s = (ServerPIPE *)loc_alloc_zero(sizeof(ServerPIPE));
-#if defined(_WIN32) && !defined(__CYGWIN__)
+#if defined(_WIN32) && !defined(__CYGWIN__) && !TARGET_RTOS32
     {
         int i;
         const char * path = peer_server_getprop(ps, attr_pipe_name, def_pipe_name);

@@ -290,9 +290,11 @@ static DWORD event_win32_context_stopped(Context * ctx) {
                     else {
                         assert(buf & 0x100);
                         buf &= ~0x100;
+#if !TARGET_RTOS32
                         if (!WriteProcessMemory(EXT(ctx->mem)->handle, (LPVOID)ext->regs->reg_sp, &buf, sizeof(ContextAddress), &bcnt) || bcnt != sizeof(ContextAddress)) {
                             log_error("WriteProcessMemory", 0);
                         }
+#endif
                     }
                 }
                 if (!cb_found && ext->step_opcodes_len == 0) {
@@ -427,6 +429,7 @@ static void break_process_event(void * args) {
     Context * ctx = (Context *)args;
     ContextExtensionWin32 * ext = EXT(ctx);
 
+#if !TARGET_RTOS32
     if (ext->debug_state != NULL) {
         LINK * l;
         int cnt = 0;
@@ -478,6 +481,7 @@ static void break_process_event(void * args) {
             }
         }
     }
+#endif
     context_unlock(ctx);
 }
 
@@ -627,7 +631,11 @@ static Context * add_thread(Context * prs, pid_t pid, DWORD thread, DebugState *
     ext = EXT(ctx = create_context(pid2id(thread, pid)));
     ext->regs = (REG_SET *)loc_alloc_zero(sizeof(REG_SET));
     ext->pid = thread;
+#if TARGET_RTOS32
+    ext->handle = NULL;
+#else
     ext->handle = OpenThread(THREAD_ALL_ACCESS, FALSE, thread);
+#endif
     ext->debug_state = state;
     ctx->mem = prs;
     ctx->big_endian = prs->big_endian;
@@ -717,7 +725,12 @@ static void debug_event_handler(DebugEvent * debug_event) {
             ext = EXT(ctx = create_context(pid2id(debug_state->main_thread_id, win32_event->dwProcessId)));
             ext->regs = (REG_SET *)loc_alloc_zero(sizeof(REG_SET));
             ext->pid = debug_state->main_thread_id;
+#if TARGET_RTOS32
+            ext->handle = NULL;
+#else
             ext->handle = OpenThread(THREAD_ALL_ACCESS, FALSE, debug_state->main_thread_id);
+#endif
+
             ext->debug_state = debug_state;
             ctx->mem = prs;
             ctx->big_endian = prs->big_endian;
@@ -946,6 +959,7 @@ static DWORD WINAPI debugger_thread_func(LPVOID x) {
     DebugEvent debug_event;
     unsigned timeout_cnt = 0;
 
+#if !TARGET_RTOS32
     if (DebugActiveProcess(debug_state->process_id) == 0) {
         debug_state->error = GetLastError();
         trace(LOG_ALWAYS, "Can't attach to a process: error %d", debug_state->error);
@@ -1002,6 +1016,7 @@ static DWORD WINAPI debugger_thread_func(LPVOID x) {
     }
 
     post_event(debugger_exit_handler, debug_state);
+#endif
     return 0;
 }
 
@@ -1225,11 +1240,13 @@ int context_write_mem(Context * ctx, ContextAddress address, void * buf, size_t 
     assert(is_dispatch_thread());
     mem_err_info.error = 0;
     if (check_breakpoints_on_memory_write(ctx, address, buf, size) < 0) return -1;
+#if !TARGET_RTOS32
     if (WriteProcessMemory(ext->handle, (LPVOID)address, buf, size, &bcnt) == 0 || bcnt != size) {
         mem_err_info.error = set_win32_errno(GetLastError());
         mem_err_info.size_valid = bcnt;
         mem_err_info.size_error = 1;
     }
+#endif
     if (FlushInstructionCache(ext->handle, (LPCVOID)address, bcnt) == 0) {
         mem_err_info.error = 0;
         errno = log_error("FlushInstructionCache", 0);
@@ -1384,6 +1401,7 @@ int context_get_memory_map(Context * ctx, MemoryMap * map) {
     ctx = ctx->mem;
     assert(!ctx->exited);
     ext = EXT(ctx);
+#if !TARGET_RTOS32
     for (;;) {
         if (!EnumProcessModules(ext->handle, mods, mods_max, &mods_len)) {
             set_win32_errno(GetLastError());
@@ -1407,6 +1425,7 @@ int context_get_memory_map(Context * ctx, MemoryMap * map) {
         }
         add_module_info(map, name, (uintptr_t)info.lpBaseOfDll, info.SizeOfImage);
     }
+#endif
     return 0;
 }
 

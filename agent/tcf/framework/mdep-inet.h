@@ -21,7 +21,25 @@
 #ifndef D_mdep_inet
 #define D_mdep_inet
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if TARGET_RTOS32
+
+extern const char * loc_gai_strerror(int ecode);
+
+extern const char * inet_ntop(int af, const void * src, char * dst, socklen_t size);
+extern int inet_pton(int af, const char * src, void * dst);
+
+extern void loc_freeaddrinfo(struct addrinfo * ai);
+extern int loc_getaddrinfo(const char * nodename, const char * servname,
+    const struct addrinfo * hints, struct addrinfo ** res);
+
+#define SHUT_WR 1
+#define SHUT_RDWR 2
+
+struct ip_ifc_info;
+extern void set_ip_ifc(struct ip_ifc_info * info);
+extern struct ip_ifc_info * get_ip_ifc(void);
+
+#elif defined(_WIN32) || defined(__CYGWIN__)
 
 #include <ws2tcpip.h>
 #include <iphlpapi.h>

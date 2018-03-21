@@ -607,6 +607,7 @@ static void write_process_context(OutputStream * out, char * id, pid_t pid, HAND
         FILETIME c_time, e_time, k_time, u_time;
         if (GetProcessTimes(prs, &c_time, &e_time, &k_time, &u_time)) {
             static int64_t system_start_time = 0; /* In FILETIME format: 100-nanosecond intervals since January 1, 1601 (UTC). */
+#if !TARGET_RTOS32
             if (system_start_time == 0) {
                 HKEY key;
                 if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
@@ -636,6 +637,7 @@ static void write_process_context(OutputStream * out, char * id, pid_t pid, HAND
                     RegCloseKey(key);
                 }
             }
+#endif
             if (system_start_time == 0) {
                 SYSTEMTIME st;
                 FILETIME ft;
@@ -675,6 +677,7 @@ static void command_get_context(char * token, Channel * c) {
         write_stringz(&c->out, "null");
     }
     else if (pid != 0) {
+#if !TARGET_RTOS32
         HANDLE prs = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
         if (prs == NULL) err = set_win32_errno(GetLastError());
         if (err == 0 && get_process_info(prs) < 0) err = errno;
@@ -687,6 +690,7 @@ static void command_get_context(char * token, Channel * c) {
             write_stringz(&c->out, "null");
         }
         if (prs != NULL) CloseHandle(prs);
+#endif
     }
     else {
         write_errno(&c->out, err);
@@ -798,7 +802,9 @@ static void command_get_command_line(char * token, Channel * c) {
 
     pid = id2pid(id, &parent);
     if (pid != 0 && parent == 0) {
+#if !TARGET_RTOS32
         prs = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+#endif
         if (prs == NULL) err = set_win32_errno(GetLastError());
     }
     else {
@@ -903,7 +909,9 @@ static void command_get_environment(char * token, Channel * c) {
 
     pid = id2pid(id, &parent);
     if (pid != 0 && parent == 0) {
+#if !TARGET_RTOS32
         prs = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+#endif
         if (prs == NULL) err = set_win32_errno(GetLastError());
     }
     else {

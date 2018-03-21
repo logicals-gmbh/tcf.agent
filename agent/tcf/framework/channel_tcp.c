@@ -808,12 +808,14 @@ static ChannelTCP * create_channel(int sock, int en_ssl, int server, int unix_do
 
     assert(sock >= 0);
     if (!unix_domain) {
+#if !TARGET_RTOS32
         if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&i, sizeof(i)) < 0) {
             int error = errno;
             trace(LOG_ALWAYS, "Can't set TCP_NODELAY option on a socket: %s", errno_to_str(error));
             errno = error;
             return NULL;
         }
+#endif
         if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char *)&i, sizeof(i)) < 0) {
             int error = errno;
             trace(LOG_ALWAYS, "Can't set SO_KEEPALIVE option on a socket: %s", errno_to_str(error));
@@ -1135,6 +1137,9 @@ static ChannelServer * channel_server_create(PeerServer * ps, int sock) {
     si->accreq.u.acc.sock = sock;
     si->accreq.u.acc.addr = si->addr_buf;
     si->accreq.u.acc.addrlen = si->addr_len;
+#if TARGET_RTOS32
+    si->accreq.u.acc.addr->sa_family = AF_INET;
+#endif
     async_req_post(&si->accreq);
     return &si->serv;
 }

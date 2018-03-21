@@ -42,13 +42,16 @@ elseif(UNIX)
   set(MULTI_THREADED_LINK_FLAGS "")
   set(MULTI_THREADED_LINK_LIBS pthread rt)
   set(UUID_LIB_NAME uuid)
+elseif(RTOS32)
 elseif(WIN32)
   set(SOCKET_LINK_LIBS ws2_32 iphlpapi)
 endif()
 
 include(../cmake-tcf-lib.txt)
 
-if(WIN32)
+if(RTOS32)
+    target_link_libraries(${TCF_LIB_NAME} rttdll.lib)
+elseif(WIN32)
     target_link_libraries(${TCF_LIB_NAME} version.lib psapi.lib)
 endif()
 
