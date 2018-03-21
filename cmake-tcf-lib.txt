@@ -108,6 +108,10 @@ if(DEFINED TCF_PLUGIN_PATH)
   endif()
 endif()
 
+if(WIN32)
+  add_definitions(-DENABLE_GdbRemoteSerialProtocol=0)
+endif()
+
 if(MSVC)
   add_definitions(-DENABLE_Plugins=0 -DENABLE_Discovery=0 -DSERVICE_Symbols=0 -DSERVICE_LineNumbers=0 -DENABLE_WindowsUserspaceSynchronization=0)
 endif()
