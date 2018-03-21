@@ -203,7 +203,8 @@ static void * worker_thread_handler(void * x) {
             break;
 
 /* Platform dependant IO methods */
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if TARGET_RTOS32
+#elif defined(_WIN32) || defined(__CYGWIN__)
         case AsyncReqConnectPipe:
             req->u.cnp.rval = ConnectNamedPipe(req->u.cnp.pipe, NULL);
             if (!req->u.cnp.rval) {
@@ -421,7 +422,7 @@ static void * worker_thread_handler(void * x) {
                 struct stat st;
                 struct RootDevNode * newDevNode = NULL;
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if (defined(_WIN32) || defined(__CYGWIN__)) && !TARGET_RTOS32
                 {
                     struct RootDevNode * curDevNode = NULL;
                     int disk = 0;

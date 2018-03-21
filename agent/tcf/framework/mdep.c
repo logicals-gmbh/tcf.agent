@@ -43,7 +43,7 @@ pthread_attr_t pthread_create_attr;
 int utf8_locale = 0;
 #endif
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if (defined(_WIN32) || defined(__CYGWIN__)) && !TARGET_RTOS32
 
 #ifndef SIO_UDP_CONNRESET
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
@@ -617,7 +617,82 @@ void swap_bytes(void * buf, size_t size) {
     }
 }
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if TARGET_RTOS32
+
+const char * get_os_name(void) {
+    return "RTOS-32";
+}
+
+const char * get_user_home(void) {
+    return "/";
+}
+
+const char * get_user_name(void) {
+    errno = ERR_UNSUPPORTED;
+    return NULL;
+}
+
+void ini_mdep(void) {
+    pthread_attr_init(&pthread_create_attr);
+}
+
+/**
+* Some of the dynamic IP interface scanning routines are unreliable, so
+* include a workaround to manually set the desired interface from outside.
+*/
+#include <tcf/framework/ip_ifc.h>
+
+static ip_ifc_info* gSelectedIPInterface;
+
+void set_ip_ifc(ip_ifc_info* info) {
+    gSelectedIPInterface = info;
+}
+ip_ifc_info* get_ip_ifc(void) {
+    return gSelectedIPInterface;
+}
+
+int loc_getaddrinfo(const char * nodename, const char * servname, const struct addrinfo * hints, struct addrinfo ** res) {
+    DWORD addr;
+    struct sockaddr_in* sin = loc_alloc_zero(sizeof(struct sockaddr_in));
+    *res = loc_alloc_zero(sizeof(struct addrinfo));
+    (*res)->ai_family = hints->ai_family;
+    (*res)->ai_socktype = hints->ai_socktype;
+    (*res)->ai_addr = (struct sockaddr*) sin;
+    (*res)->ai_addrlen = sizeof(*sin);
+    (*res)->ai_protocol = hints->ai_protocol;
+
+    if (hints->ai_flags & AI_PASSIVE) {
+        addr = htonl(INADDR_ANY);
+    } else {
+        addr = inet_addr(nodename);
+
+        if (addr == INADDR_NONE) {
+            struct hostent * h = gethostbyname((char*) nodename);
+            if (h) {
+                const BYTE* I = (BYTE*) h->h_addr_list[0];
+                addr = *(DWORD*)I;
+            }
+        }
+    }
+
+    sin->sin_family = hints->ai_family;
+    memcpy(&sin->sin_addr, &addr, sizeof(addr));
+    sin->sin_port = htons(atoi(servname));
+
+    return 0;
+}
+
+void loc_freeaddrinfo(struct addrinfo * ai) {
+    loc_free(ai->ai_addr);
+    loc_free(ai);
+}
+
+const char * inet_ntop(int af, const void * src, char * dst, socklen_t size) {
+    dst[0] = '\0';
+    return NULL;
+}
+
+#elif defined(_WIN32) || defined(__CYGWIN__)
 
 #if USE_locale
 #  include <locale.h>
@@ -1315,6 +1390,7 @@ static NTSTATUS disable_handle_inheritance(void) {
         if (status != STATUS_INFO_LENGTH_MISMATCH) break;
         hi = (SYSTEM_HANDLE_INFORMATION *)tmp_realloc(hi, size);
     }
+#if !TARGET_RTOS32
     if (status == 0) {
         ULONG i;
         DWORD id = GetCurrentProcessId();
@@ -1323,6 +1399,7 @@ static NTSTATUS disable_handle_inheritance(void) {
             SetHandleInformation((HANDLE)(uintptr_t)hi->Handles[i].Handle, HANDLE_FLAG_INHERIT, 0);
         }
     }
+#endif
     return status;
 }
 
@@ -1405,8 +1482,10 @@ void become_daemon(char **args) {
     startupInfo.hStdInput = INVALID_HANDLE_VALUE;
     startupInfo.hStdOutput = (HANDLE)_get_osfhandle(fdpairs[1]);
     startupInfo.hStdError = (HANDLE)_get_osfhandle(fdpairs[3]);
+#if !TARGET_RTOS32
     SetHandleInformation(startupInfo.hStdOutput, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
     SetHandleInformation(startupInfo.hStdError, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+#endif
 
     if (!CreateProcess(fnm, make_cmd_from_args(args), NULL, NULL, TRUE,
                        DETACHED_PROCESS, NULL, NULL, &startupInfo, &prs_info)) {
@@ -1417,10 +1496,12 @@ void become_daemon(char **args) {
     for (i = 0; i < 2; i++) {
         /* Make read side non-blocking */
         DWORD pipemode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+#if !TARGET_RTOS32
         if (!SetNamedPipeHandleState((HANDLE)_get_osfhandle(fdpairs[i*2]), &pipemode, NULL, NULL)) {
             fprintf(stderr, "SetNamedPipeHandleState failed 0x%lx\n", (unsigned long)GetLastError());
             exit(1);
         }
+#endif
 
         /* Close write side of pipes so we get end of file as soon as
          * the new them or exits */

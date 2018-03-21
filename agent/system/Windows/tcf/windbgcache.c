@@ -150,6 +150,8 @@ static MemoryMapEventListener map_listener = {
 
 #endif
 
+#if ENABLE_PE || ENABLE_EnumerateModules
+
 static void CheckDLLVersion(void) {
     DWORD handle = 0;
     WCHAR fnm[_MAX_PATH];
@@ -228,6 +230,8 @@ static FARPROC GetProc(char * name) {
     }
     return GetProcAddress(dbghelp_dll, name);
 }
+
+#endif
 
 #endif
 

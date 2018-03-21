@@ -70,7 +70,11 @@ static HANDLE semaphore = NULL;
 static void waitpid_event(void * args) {
     int i;
     HANDLE prs = args;
+#if TARGET_RTOS32
+    DWORD pid = 0;
+#else
     DWORD pid = GetProcessId(prs);
+#endif
     DWORD exit_code = 0;
     check_error_win32(GetExitCodeProcess(prs, &exit_code));
     for (i = 0; i < listener_cnt; i++) {
@@ -119,10 +123,12 @@ void add_waitpid_process(int pid) {
         check_error_win32((thread->handles[thread->handle_cnt++] = CreateEvent(NULL, 0, 0, NULL)) != NULL);
         check_error_win32(CreateThread(NULL, 0, waitpid_thread_func, thread, 0, &thread->thread) != NULL);
     }
+#if !TARGET_RTOS32
     check_error_win32((prs = OpenProcess(PROCESS_QUERY_INFORMATION | SYNCHRONIZE, FALSE, pid)) != NULL);
     thread->handles[thread->handle_cnt++] = prs;
     check_error_win32(SetEvent(thread->handles[0]));
     check_error_win32(ReleaseSemaphore(semaphore, 1, 0));
+#endif
 }
 
 void detach_waitpid_process(void) {

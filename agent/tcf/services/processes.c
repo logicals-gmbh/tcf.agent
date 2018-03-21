@@ -365,17 +365,21 @@ static void command_get_children(char * token, Channel * c) {
     else {
 #if defined(_WIN32) || defined(__CYGWIN__)
     DWORD err = 0;
-    HANDLE snapshot;
+    HANDLE snapshot = INVALID_HANDLE_VALUE;
     PROCESSENTRY32 pe32;
 
+#if !TARGET_RTOS32
     snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+#endif
     if (snapshot == INVALID_HANDLE_VALUE) err = set_win32_errno(GetLastError());
     memset(&pe32, 0, sizeof(pe32));
     pe32.dwSize = sizeof(PROCESSENTRY32);
+#if !TARGET_RTOS32
     if (!err && !Process32First(snapshot, &pe32)) {
         err = set_win32_errno(GetLastError());
         CloseHandle(snapshot);
     }
+#endif
     write_errno(&c->out, err);
     if (err) {
         write_stringz(&c->out, "null");
@@ -383,6 +387,7 @@ static void command_get_children(char * token, Channel * c) {
     else {
         int cnt = 0;
         write_stream(&c->out, '[');
+#if !TARGET_RTOS32
         do {
             if (!attached_only || is_attached(pe32.th32ProcessID)) {
                 if (cnt > 0) write_stream(&c->out, ',');
@@ -391,6 +396,7 @@ static void command_get_children(char * token, Channel * c) {
             }
         }
         while (Process32Next(snapshot, &pe32));
+#endif
         write_stream(&c->out, ']');
         write_stream(&c->out, 0);
     }
@@ -715,7 +721,8 @@ static void command_terminate(char * token, Channel * c) {
         err = ERR_INV_CONTEXT;
     }
     else {
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if TARGET_RTOS32
+#elif defined(_WIN32) || defined(__CYGWIN__)
         HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
         if (h == NULL) {
             err = set_win32_errno(GetLastError());
@@ -749,7 +756,8 @@ static void command_signal(char * token, Channel * c) {
     write_stringz(&c->out, "R");
     write_stringz(&c->out, token);
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if TARGET_RTOS32
+#elif defined(_WIN32) || defined(__CYGWIN__)
     if (parent != 0) {
         err = ERR_INV_CONTEXT;
     }
@@ -1094,12 +1102,14 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
         hi = (SYSTEM_HANDLE_INFORMATION *)tmp_realloc(hi, size);
     }
     if (status == 0) {
+#if !TARGET_RTOS32
         ULONG l;
         DWORD id = GetCurrentProcessId();
         for (l = 0; l < hi->Count; l++) {
             if (hi->Handles[l].ProcessId != id) continue;
             SetHandleInformation((HANDLE)(uintptr_t)hi->Handles[l].Handle, HANDLE_FLAG_INHERIT, FALSE);
         }
+#endif
     }
     else {
         err = set_win32_errno(status);
@@ -1138,9 +1148,11 @@ static int start_process_imp(Channel * c, char ** envp, const char * dir, const 
         char * cmd = NULL;
         char * env = NULL;
         const char * env_path = NULL;
+#if !TARGET_RTOS32
         SetHandleInformation(hpipes[0][0], HANDLE_FLAG_INHERIT, TRUE);
         SetHandleInformation(hpipes[1][1], HANDLE_FLAG_INHERIT, TRUE);
         SetHandleInformation(hpipes[2][1], HANDLE_FLAG_INHERIT, TRUE);
+#endif
         memset(&si, 0, sizeof(si));
         memset(&prs_info, 0, sizeof(prs_info));
         si.cb = sizeof(si);

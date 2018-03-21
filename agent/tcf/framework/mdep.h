@@ -74,7 +74,28 @@
 #endif
 
 /* winsock2.h must be included before sys/types.h */
+
+#ifndef __RTOS32__
 #include <winsock2.h>
+#else
+#include <Socket.h>
+#include <Windows.h>
+
+typedef int socklen_t;
+
+struct addrinfo {
+  int              ai_flags;
+  int              ai_family;
+  int              ai_socktype;
+  int              ai_protocol;
+  socklen_t        ai_addrlen;
+  struct sockaddr *ai_addr;
+  char            *ai_canonname;
+  struct addrinfo *ai_next;
+};
+
+#define AI_PASSIVE 1
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/utime.h>

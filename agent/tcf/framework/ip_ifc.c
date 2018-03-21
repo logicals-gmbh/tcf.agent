@@ -36,7 +36,19 @@
 #endif
 
 int build_ifclist(int sock, int max, ip_ifc_info * list) {
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(__SYMBIAN32__) || TARGET_RTOS32
+    int ind = 0;
+    ip_ifc_info* info = get_ip_ifc();
+    if (info) {
+        trace(LOG_ALWAYS, "The IP address is %d.%d.%d.%d",
+            (info->addr >> 24) & 0xff,
+            (info->addr >> 16) & 0xff,
+            (info->addr >> 8) & 0xff,
+            info->addr & 0xff
+        );
+        list[ind++] = *info;
+    }
+#elif defined(_WIN32) || defined(__CYGWIN__)
     int i;
     int ind;
     MIB_IPADDRTABLE * info;
@@ -64,18 +76,6 @@ int build_ifclist(int sock, int max, ip_ifc_info * list) {
         ind++;
     }
     loc_free(info);
-#elif defined(__SYMBIAN32__)
-    int ind = 0;
-    ip_ifc_info* info = get_ip_ifc();
-    if (info) {
-        trace(LOG_ALWAYS,"The IP address is %d.%d.%d.%d",
-                (info->addr >> 24) & 0xff,
-                (info->addr >> 16) & 0xff,
-                (info->addr >> 8) & 0xff,
-                info->addr & 0xff
-                );
-        list[ind++] = *info;
-    }
 #else
     int ind;
     char * cp;

@@ -32,6 +32,11 @@
 #  else
 #    define TARGET_MSVC     0
 #  endif
+#  if defined(__RTOS32__)
+#    define TARGET_RTOS32   1
+#else
+#    define TARGET_RTOS32   0
+#  endif
 #  define TARGET_BSD        0
 #  define TARGET_SYMBIAN    0
 #  define TARGET_ANDROID    0
@@ -40,6 +45,7 @@
 #  define TARGET_VXWORKS    1
 #  define TARGET_UNIX       0
 #  define TARGET_MSVC       0
+#  define TARGET_RTOS32     0
 #  define TARGET_BSD        0
 #  define TARGET_SYMBIAN    0
 #  define TARGET_ANDROID    0
@@ -48,6 +54,7 @@
 #  define TARGET_VXWORKS    0
 #  define TARGET_UNIX       0
 #  define TARGET_MSVC       0
+#  define TARGET_RTOS32     0
 #  define TARGET_BSD        0
 #  define TARGET_SYMBIAN    1
 #  define TARGET_ANDROID    0
@@ -56,6 +63,7 @@
 #  define TARGET_VXWORKS    0
 #  define TARGET_UNIX       1
 #  define TARGET_MSVC       0
+#  define TARGET_RTOS32     0
 #  if defined(__FreeBSD__) || defined(__NetBSD__)
 #    define TARGET_BSD      1
 #  else

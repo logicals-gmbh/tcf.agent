@@ -234,7 +234,8 @@ static int kill_term(Terminal * term) {
     int err = 0;
     int pid = get_process_pid(term->prs);
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if TARGET_RTOS32
+#elif defined(_WIN32) || defined(__CYGWIN__)
     HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
     if (h == NULL) {
         err = set_win32_errno(GetLastError());

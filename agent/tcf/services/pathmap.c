@@ -191,12 +191,16 @@ static void flush_host_name(void * args) {
 }
 
 static int is_my_host(char * host) {
+#if TARGET_RTOS32
+    return 0;
+#else
     if (host == NULL || host[0] == 0) return 1;
     if (host_name[0] == 0) {
         gethostname(host_name, sizeof(host_name));
         if (host_name[0] != 0) post_event_with_delay(flush_host_name, NULL, 1000000);
     }
     return strcasecmp(host, host_name) == 0;
+#endif
 }
 
 static void free_rule(PathMapRule * r) {
