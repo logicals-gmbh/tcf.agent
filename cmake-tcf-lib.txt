@@ -108,6 +108,10 @@ if(DEFINED TCF_PLUGIN_PATH)
   endif()
 endif()
 
+if(MSVC)
+  add_definitions(-DENABLE_Plugins=0 -DENABLE_Discovery=0 -DSERVICE_Symbols=0 -DSERVICE_LineNumbers=0 -DENABLE_WindowsUserspaceSynchronization=0)
+endif()
+
 if (LIBWEBSOCKETSDIR)
   find_library(LIBWEBSOCKETS NAME "websockets" PATHS ${LIBWEBSOCKETSDIR}/lib NO_DEFAULT_PATH)
   if (${LIBWEBSOCKETS} STREQUAL "LIBWEBSOCKETS-NOTFOUND")
