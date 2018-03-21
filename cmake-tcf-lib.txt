@@ -43,6 +43,7 @@ set(TCF_SRCS)
 
 # get all regular source files
 file(GLOB TCF_SRCS_REL RELATIVE ${TCF_BASE_DIR}
+	${TCF_BASE_DIR}/tcf-agent.def
 	${TCF_BASE_DIR}/system/${TCF_OPSYS}/tcf/*.c
 	${TCF_BASE_DIR}/machine/${TCF_MACHINE}/tcf/*.c
 	${TCF_BASE_DIR}/tcf/framework/*.c

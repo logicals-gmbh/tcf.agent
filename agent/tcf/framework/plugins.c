@@ -436,4 +436,20 @@ int plugins_destroy(void) {
     return 0;
 }
 
+#else  /* if ENABLE_Plugins */
+
+/* The following functions are a simple workaround to have functions for
+   the functions listed in the .def file. They must not be used */
+
+void plugins_set_path(void) {
+}
+
+int plugins_load(void) {
+    return -1;
+}
+
+int plugins_destroy(void) {
+    return 0;
+}
+
 #endif  /* if ENABLE_Plugins */
