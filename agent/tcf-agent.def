@@ -25,7 +25,10 @@ ini_mdep
 ini_server
 ini_services
 ini_trace
+ini_framework
 is_dispatch_thread
+open_script_file
+set_single_command
 json_peek
 json_read_alloc_string
 json_read_binary_data
@@ -78,3 +81,4 @@ write_errno
 write_stream
 write_stream
 write_stringz
+client_connection_root

@@ -92,7 +92,9 @@ include_directories(${TCF_BASE_DIR} ${TCF_BASE_DIR}/system/${TCF_OPSYS} ${TCF_BA
 set_source_files_properties(${TCF_SRCS} PROPERTIES
   COMPILE_FLAGS "${MULTI_THREADED_COMPILE_FLAGS}")
 add_library(${TCF_LIB_NAME} ${TCF_LIB_TYPE} ${TCF_SRCS})
-target_sources(${TCF_LIB_NAME} PRIVATE ${TCF_BASE_DIR}/tcf-agent.def)
+if(WIN32)
+  target_sources(${TCF_LIB_NAME} PRIVATE ${TCF_BASE_DIR}/tcf-agent.def)
+endif()
 target_link_libraries(${TCF_LIB_NAME}
   ${UUID_LIB_NAME} ${MULTI_THREADED_LINK_LIBS} ${SOCKET_LINK_LIBS})
 if(MSVC)
