@@ -1927,3 +1927,37 @@ const char * create_uuid(void) {
 }
 
 #endif
+
+#if TARGET_RTOS32
+const char * inet_ntop(int af, const void * src, char * dst, socklen_t size) {
+    char * str = NULL;
+    if (af != AF_INET) {
+#ifdef EAFNOSUPPORT
+        errno = EAFNOSUPPORT;
+#else
+        errno = EINVAL;
+#endif
+        return NULL;
+    }
+    str = inet_ntoa(*(struct in_addr *)src);
+    if ((socklen_t)strlen(str) >= size) {
+        errno = ENOSPC;
+        return NULL;
+    }
+    return strcpy(dst, str);
+}
+
+int inet_pton(int af, const char * src, void * dst) {
+    if (af != AF_INET) {
+#ifdef EAFNOSUPPORT
+        errno = EAFNOSUPPORT;
+#else
+        errno = EINVAL;
+#endif
+        return -1;
+    }
+    if (src == NULL || *src == 0) return 0;
+    if ((((struct in_addr *)dst)->s_addr = inet_addr(src)) == INADDR_NONE) return 0;
+    return 1;
+}
+#endif /* TARGET_RTOS32*/

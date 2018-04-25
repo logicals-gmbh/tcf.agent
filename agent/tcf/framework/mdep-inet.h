@@ -39,6 +39,8 @@ struct ip_ifc_info;
 extern void set_ip_ifc(struct ip_ifc_info * info);
 extern struct ip_ifc_info * get_ip_ifc(void);
 
+#define WSASetLastError(error)
+
 #elif defined(_WIN32) || defined(__CYGWIN__)
 
 #include <ws2tcpip.h>
