@@ -124,6 +124,7 @@ endif()
 
 if(RTOS32)
   add_definitions(-D__RTOS32__)
+  target_include_directories(${TCF_LIB_NAME} PRIVATE ${TCF_DIR}/rtos-32)
 endif()
 
 if (LIBWEBSOCKETSDIR)

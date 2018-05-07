@@ -43,7 +43,7 @@ pthread_attr_t pthread_create_attr;
 int utf8_locale = 0;
 #endif
 
-#if (defined(_WIN32) || defined(__CYGWIN__)) && !TARGET_RTOS32
+#if defined(_WIN32) || defined(__CYGWIN__)
 
 #ifndef SIO_UDP_CONNRESET
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
@@ -62,12 +62,14 @@ int wsa_socket(int af, int type, int protocol) {
         set_win32_errno(WSAGetLastError());
         return -1;
     }
+#if !TARGET_RTOS32
     if (type == SOCK_DGRAM && protocol == IPPROTO_UDP) {
         DWORD dw = 0;
         BOOL b = FALSE;
         WSAIoctl(res, SIO_UDP_CONNRESET, &b, sizeof(b), NULL, 0, &dw, NULL, NULL);
         WSAIoctl(res, SIO_UDP_NETRESET, &b, sizeof(b), NULL, 0, &dw, NULL, NULL);
     }
+#endif
     return res;
 }
 
@@ -148,7 +150,11 @@ int wsa_send(int socket, const void * buf, size_t size, int flags) {
     int res = 0;
     SetLastError(0);
     WSASetLastError(0);
+#if !TARGET_RTOS32
     res = (send)(socket, (char *)buf, size, flags);
+#else
+	res = rtos32_send(socket, (char *)buf, size, flags);
+#endif
     if (res < 0) {
         set_win32_errno(WSAGetLastError());
         return -1;
@@ -216,10 +222,6 @@ int wsa_select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * exceptfds
     }
     return res;
 }
-
-#endif /* #if (defined(_WIN32) || defined(__CYGWIN__)) && !TARGET_RTOS32*/
-
-#if defined(_WIN32) || defined(__CYGWIN__)
 
 int wsa_ioctlsocket(int socket, long cmd, unsigned long * args) {
     int res = 0;
