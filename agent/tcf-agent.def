@@ -1,10 +1,13 @@
 LIBRARY libtcf-agent
 
 EXPORTS
+add_channel_open_listener
 add_channel_close_listener
 add_command_handler2
 become_daemon
 broadcast_group_alloc
+broadcast_group_lock
+broadcast_group_unlock
 cancel_event_loop
 channel_close
 channel_peer_to_json
