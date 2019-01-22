@@ -33,7 +33,10 @@ is_dispatch_thread
 open_script_file
 set_single_command
 json_peek
+json_read_alloc_binary
 json_read_alloc_string
+json_read_alloc_string_array
+json_read_array
 json_read_binary_data
 json_read_binary_end
 json_read_binary_start
@@ -41,7 +44,9 @@ json_read_boolean
 json_read_double
 json_read_int64
 json_read_long
+json_read_object
 json_read_string
+json_read_struct
 json_read_uint64
 json_read_ulong
 json_skip_object
@@ -51,10 +56,12 @@ json_write_binary_data
 json_write_binary_end
 json_write_binary_start
 json_write_boolean
+json_write_char
 json_write_double
 json_write_int64
 json_write_long
 json_write_string
+json_write_string_len
 json_write_uint64
 json_write_ulong
 loc_free
@@ -84,4 +91,6 @@ write_errno
 write_stream
 write_stream
 write_stringz
+read_error_object
+read_errno
 client_connection_root
