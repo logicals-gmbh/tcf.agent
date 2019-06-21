@@ -94,3 +94,5 @@ write_stringz
 read_error_object
 read_errno
 client_connection_root
+exception
+str_to_double
