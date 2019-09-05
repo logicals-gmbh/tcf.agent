@@ -8,6 +8,7 @@ become_daemon
 broadcast_group_alloc
 broadcast_group_lock
 broadcast_group_unlock
+cancel_event
 cancel_event_loop
 channel_close
 channel_peer_to_json
