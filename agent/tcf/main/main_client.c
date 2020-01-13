@@ -66,14 +66,13 @@ int main(int argc, char ** argv) {
     const char * script_name = NULL;
 #endif
 
-    log_mode = 0;
-
     ini_framework();
 
 #if defined(_WRS_KERNEL)
 
     progname = "tcf";
     open_log_file("-");
+    log_mode = 0;
 
 #else
 

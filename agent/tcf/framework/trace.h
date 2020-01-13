@@ -44,17 +44,7 @@
 
 #define LOG_NAME_STDERR "-"
 
-#ifdef _WIN32
-#ifdef WIN32DLL_EXPORTS
-#define EXTERN_OR_DLLSPEC __declspec(dllimport)
-#else
-#define EXTERN_OR_DLLSPEC __declspec(dllexport)
-#endif
-#else
-#define EXTERN_OR_DLLSPEC extern
-#endif
-
-EXTERN_OR_DLLSPEC int log_mode;
+extern int log_mode;
 
 #if ENABLE_Trace
 
@@ -64,7 +54,7 @@ EXTERN_OR_DLLSPEC int log_mode;
  */
 extern int print_trace(int mode, const char * fmt, ...) ATTR_PRINTF(2, 3);
 
-EXTERN_OR_DLLSPEC FILE * log_file;
+extern FILE * log_file;
 
 #define trace log_file == NULL ? (void)0 : (void)print_trace
 
