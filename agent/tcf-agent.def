@@ -65,6 +65,9 @@ json_write_string
 json_write_string_len
 json_write_uint64
 json_write_ulong
+loc_alloc
+loc_alloc_zero
+loc_realloc
 loc_free
 log_mode
 log_file
